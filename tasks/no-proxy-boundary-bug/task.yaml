@@ -1,0 +1,8 @@
+id: no-proxy-boundary-bug
+title: no_proxy 도메인 경계 매칭 수정
+category: bugfix
+difficulty: medium
+source: pr
+source_ref: https://github.com/psf/requests/pull/7427
+source_commit: b684dcb9bbf3aa557d1238e72062c4a29737dd1c
+license: Apache-2.0

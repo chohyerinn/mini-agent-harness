@@ -201,9 +201,9 @@ tasks/<task-id>/
 과제를 실행할 때는 `workspace/`를 임시 폴더로 복사해서 사용합니다. 원본
 과제 파일은 수정하지 않습니다.
 
-현재 9개 과제가 들어 있으며, 모두 재현 가능하도록 직접 작성한 합성
-(synthetic) 버그입니다. 실제 PR 이력을 무리하게 긁어모으는 대신, 난이도별로
-작고 검증된 버그를 먼저 갖추는 쪽을 택했습니다. `task.yaml`에는
+현재 11개 과제가 들어 있습니다. 재현성을 위해 직접 작성한 합성
+(synthetic) 버그 9개와, 실제 오픈소스 버그 수정 PR의 동작을 작은 독립 함수로
+재현한 과제 2개로 구성했습니다. `task.yaml`에는
 `source: synthetic | pr` 필드가 있어서, 나중에 실제 PR 기반 과제를 추가할 때
 원본 PR/이슈 링크(`source_ref`), 기준 커밋 SHA(`source_commit`), 라이선스
 (`license`)를 같은 스키마로 기록할 수 있습니다.
@@ -219,6 +219,15 @@ tasks/<task-id>/
 | `retry-backoff-bug` | hard | `attempts-1`번만 시도하고 마지막 예외를 삼켜 `None` 반환 |
 | `pagination-bug` | medium | `//` 정수 나눗셈만 써서 마지막 부분 페이지를 누락(올림 빠짐) |
 | `mutable-default-bug` | medium | 가변 기본 인자가 호출 간 공유돼 결과가 누적됨 |
+| `deprecated-label-bug` | medium | 빈 도움말의 deprecated label 앞에 공백이 남음 (Click PR #3509 기반) |
+| `no-proxy-boundary-bug` | medium | `endswith()`가 도메인 경계를 무시해 `prelocalhost`까지 매칭 (Requests PR #7427 기반) |
+
+### 실제 PR 기반 과제의 출처
+
+| Task | Source | Base commit | License | Notes |
+|---|---|---|---|---|
+| `deprecated-label-bug` | [pallets/click#3509](https://github.com/pallets/click/pull/3509) | `648d7c4` | BSD-3-Clause | Click의 전체 구현이 아니라 빈 도움말 formatting bug만 독립 함수로 재현 |
+| `no-proxy-boundary-bug` | [psf/requests#7427](https://github.com/psf/requests/pull/7427) | `b684dcb` | Apache-2.0 | Requests의 전체 proxy stack이 아니라 도메인 경계 matching rule만 독립 함수로 재현 |
 
 ## 실험: mock 에이전트 3종을 각 5회 실행
 

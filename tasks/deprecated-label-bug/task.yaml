@@ -1,0 +1,8 @@
+id: deprecated-label-bug
+title: deprecated label의 빈 도움말 앞 공백 제거
+category: bugfix
+difficulty: medium
+source: pr
+source_ref: https://github.com/pallets/click/pull/3509
+source_commit: 648d7c403829013ade629d63ddbfe808f6b2b770
+license: BSD-3-Clause
