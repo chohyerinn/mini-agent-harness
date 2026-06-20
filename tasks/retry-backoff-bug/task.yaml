@@ -1,0 +1,8 @@
+id: retry-backoff-bug
+title: call_with_retry가 시도 횟수를 잘못 세고 마지막 예외를 삼켜버림
+category: bugfix
+difficulty: hard
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

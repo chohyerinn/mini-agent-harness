@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: mock:solve smoke test (모든 과제를 100% 풀어야 함)
+        run: |
+          python -m harness.cli --out ci-reports run --agent mock:solve --runs 1
+          python -c "
+          import json, glob
+          path = glob.glob('ci-reports/report-*-mock_solve.json')[0]
+          overall = json.load(open(path))['summary']['overall']
+          assert overall['solve_rate'] == 1.0, f'mock:solve가 모든 과제를 풀지 못함: {overall}'
+          print('OK:', overall)
+          "
+
+      - name: mock:noop 회귀 감지 sanity check (어떤 과제도 풀면 안 됨)
+        run: |
+          python -m harness.cli --out ci-reports run --agent mock:noop --runs 1
+          python -c "
+          import json, glob
+          path = glob.glob('ci-reports/report-*-mock_noop.json')[0]
+          overall = json.load(open(path))['summary']['overall']
+          assert overall['solve_rate'] == 0.0, f'mock:noop이 과제를 풀어버림(과제 설계 확인 필요): {overall}'
+          print('OK:', overall)
+          "
+
+      - name: 반복 실행(--runs) 스모크 테스트
+        run: python -m harness.cli --out ci-reports ab --a mock:solve --b mock:flaky:0.5 --runs 3

@@ -1,0 +1,8 @@
+id: csv-line-bug
+title: parse_csv_line이 인용부호 안의 쉼표를 필드 구분자로 잘못 처리함
+category: bugfix
+difficulty: medium
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

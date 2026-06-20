@@ -1,0 +1,8 @@
+id: binary-search-bug
+title: binary_search가 경계값(첫/마지막/단일 원소)을 놓침
+category: bugfix
+difficulty: easy
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

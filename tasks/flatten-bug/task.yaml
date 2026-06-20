@@ -1,0 +1,8 @@
+id: flatten-bug
+title: flatten이 한 단계만 평탄화하고 깊은 중첩을 처리하지 못함
+category: bugfix
+difficulty: easy
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

@@ -1,0 +1,8 @@
+id: merge-intervals-bug
+title: merge_intervals가 정렬되지 않은 입력에서 겹치는 구간을 놓침
+category: bugfix
+difficulty: medium
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

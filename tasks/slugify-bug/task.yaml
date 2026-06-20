@@ -1,0 +1,10 @@
+id: slugify-bug
+title: slugify가 공백과 대문자를 제대로 처리하지 못함
+category: bugfix
+difficulty: easy
+# source: synthetic(직접 작성한 재현 가능한 버그) | pr(실제 PR에서 추출)
+# pr인 경우 source_ref(PR/이슈 URL), source_commit(기준 커밋 SHA), license를 함께 채운다.
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

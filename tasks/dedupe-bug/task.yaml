@@ -1,0 +1,8 @@
+id: dedupe-bug
+title: dedupe가 입력 순서를 보존하지 못함
+category: bugfix
+difficulty: easy
+source: synthetic
+source_ref: null
+source_commit: null
+license: null
