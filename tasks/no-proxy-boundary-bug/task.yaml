@@ -4,5 +4,5 @@ category: bugfix
 difficulty: medium
 source: pr
 source_ref: https://github.com/psf/requests/pull/7427
-source_commit: b684dcb9bbf3aa557d1238e72062c4a29737dd1c
+source_commit: 52220f66843d08217b89204b7f85183fdf7514d9
 license: Apache-2.0
