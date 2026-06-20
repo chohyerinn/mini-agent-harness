@@ -1,7 +1,5 @@
 # mini-agent-harness
 
-![CI](https://github.com/chohyerinn/mini-agent-harness/actions/workflows/ci.yml/badge.svg)
-
 코딩 에이전트를 바꾸거나 프롬프트를 수정했을 때, 결과가 정말 나아졌는지 확인하기 위한 작은 평가 도구입니다.
 
 같은 버그 수정 과제를 여러 번 실행하고 테스트 결과, 수정 diff, 실행 시간, 점수 분포를 남깁니다. 한 번 잘 풀었다는 결과보다 **반복했을 때도 믿을 만한지**를 보는 데 초점을 둡니다.
