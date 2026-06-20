@@ -1,0 +1,5 @@
+id: dedupe-bug
+title: dedupe가 입력 순서를 보존하지 못함
+category: bugfix
+difficulty: easy
+source_pr: "예시: #1310 keep insertion order in dedupe"

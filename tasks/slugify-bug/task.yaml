@@ -1,0 +1,6 @@
+id: slugify-bug
+title: slugify가 공백과 대문자를 제대로 처리하지 못함
+category: bugfix
+difficulty: easy
+# 실제 운영에서는 이 메타데이터를 PR 이력에서 추출해 채운다.
+source_pr: "예시: #1242 slugify util fix"
