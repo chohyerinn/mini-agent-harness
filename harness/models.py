@@ -52,6 +52,10 @@ class RunResult:
     error: str = ""
     run_index: int = 1
     artifact_dir: str = ""
+    prompt_hash: str = ""
+    agent_fingerprint: dict[str, Any] = field(default_factory=dict)
+    tamper_detected: bool = False
+    tamper_reason: str = ""
 
     @property
     def pass_rate(self) -> float:
@@ -59,11 +63,19 @@ class RunResult:
 
     @property
     def solved(self) -> bool:
+        if self.tamper_detected:
+            return False
         return self.total > 0 and self.passed == self.total
 
     @property
     def score(self) -> float:
-        """0~100 품질 점수. 통과율이 기본, 과도한 수정에는 소폭 감점."""
+        """0~100 품질 점수. 통과율이 기본, 과도한 수정에는 소폭 감점.
+
+        테스트 변조가 감지되면(`tamper_detected`) pytest 결과를 전혀 신뢰할
+        수 없으므로 통과율과 무관하게 0점으로 처리한다.
+        """
+        if self.tamper_detected:
+            return 0.0
         base = self.pass_rate * 100
         penalty = min(10.0, self.lines_changed / 50.0)  # 50줄당 1점, 최대 10점
         return round(max(0.0, base - penalty), 2)

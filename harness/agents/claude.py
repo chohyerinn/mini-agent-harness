@@ -42,6 +42,7 @@ class ClaudeAgent:
     def __init__(self, model: str = "claude-opus-4-8") -> None:
         self.model = model
         self.name = f"claude:{model}"
+        self.fingerprint = {"model": model}
 
     def run(self, workdir: Path, prompt: str) -> None:
         import anthropic  # 지연 임포트: claude 에이전트를 쓸 때만 필요

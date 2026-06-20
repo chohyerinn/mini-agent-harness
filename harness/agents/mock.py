@@ -20,6 +20,7 @@ class MockAgent:
             raise ValueError(f"지원하지 않는 mode: {mode!r}")
         self.mode = mode
         self.name = f"mock:{mode}"
+        self.fingerprint = {"mode": mode}
 
     def run(self, workdir: Path, prompt: str) -> None:
         if self.mode == "noop":
@@ -40,6 +41,7 @@ class FlakyMockAgent:
             raise ValueError(f"성공 확률 p는 0~1 사이여야 함: {p!r}")
         self.p = p
         self.name = f"mock:flaky:{p}" if p != 0.5 else "mock:flaky"
+        self.fingerprint = {"p": p}
         self._rng = random.Random()
 
     def run(self, workdir: Path, prompt: str) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from .agents.base import Agent
 from .models import RunResult, Task
-from .scoring import compute_diff, run_pytest
+from .scoring import compute_diff, find_environment_tampering, hash_tree, run_pytest
 
 
 def run_task(
@@ -21,6 +22,15 @@ def run_task(
 ) -> RunResult:
     """task를 임시 폴더에 복제 → 에이전트 실행 → 테스트/수정량 채점.
 
+    정답 테스트(`tests/`)는 에이전트가 실행을 끝낸 **뒤에만** 작업 폴더에
+    넣는다. 에이전트가 미리 테스트를 읽고 답을 맞추거나, 테스트 파일 자체를
+    고쳐서 통과시키는 것을 막기 위함이다. 채점 직전에 항상 과제 원본에서
+    새로 복사하므로, 에이전트가 그 사이에 `tests/`라는 이름의 폴더를 만들어
+    둬도 그대로 덮어써진다. 추가로 conftest.py 등 pytest/파이썬 임포트 동작에
+    전역으로 끼어들 수 있는 파일이 새로 생기거나 바뀌었는지, 그리고 정답
+    테스트의 해시가 pytest 실행 전후로 같은지 검사해 변조가 의심되면 점수를
+    0점으로 강제한다(`RunResult.tamper_detected`).
+
     `artifact_dir`을 넘기면 이번 실행에 쓰인 prompt, 코드 diff, pytest 로그,
     에러 로그, 메타데이터(실행 시간 등)를 그 폴더에 그대로 남긴다. 회귀가
     "어떤 수정 때문에" 발생했는지 나중에 추적할 수 있게 하기 위함이다.
@@ -28,12 +38,12 @@ def run_task(
     tmp = Path(tempfile.mkdtemp(prefix=f"mah-{task.id}-"))
     try:
         work = tmp / "work"
-        base = tmp / "base"  # 수정 전 비교 기준
+        base = tmp / "base"  # 수정 전 비교 기준(변조 탐지에도 재사용)
         shutil.copytree(task.workspace, work)
         shutil.copytree(task.workspace, base)
-        shutil.copytree(task.tests, work / "tests")
         if (task.path / "solution").exists():
             shutil.copytree(task.path / "solution", tmp / "_solution")
+        # 주의: 여기서는 tests/를 work에 넣지 않는다 — 에이전트가 아직 못 보게.
 
         error = ""
         start = time.perf_counter()
@@ -43,7 +53,19 @@ def run_task(
             error = f"{type(exc).__name__}: {exc}"
         duration = round(time.perf_counter() - start, 3)
 
+        tamper_findings = find_environment_tampering(base, work)
+
+        # 채점용 테스트는 지금 처음 넣는다. 에이전트가 미리 같은 이름의
+        # 폴더를 만들어 뒀더라도 통째로 지우고 원본에서 새로 복사한다.
+        shutil.rmtree(work / "tests", ignore_errors=True)
+        shutil.copytree(task.tests, work / "tests")
+        tests_hash_ref = hash_tree(task.tests)
+
         passed, total, pytest_log = run_pytest(work)
+
+        if hash_tree(work / "tests") != tests_hash_ref:
+            tamper_findings.append("tests/ 내용이 pytest 실행 전후로 달라짐")
+
         diff = compute_diff(base, work)
 
         result = RunResult(
@@ -52,6 +74,10 @@ def run_task(
             files_changed=diff.files_changed, lines_changed=diff.lines_changed,
             duration_s=duration, error=error,
             run_index=run_index, artifact_dir=str(artifact_dir) if artifact_dir else "",
+            prompt_hash=hashlib.sha256(task.prompt.encode()).hexdigest()[:12],
+            agent_fingerprint=dict(getattr(agent, "fingerprint", {})),
+            tamper_detected=bool(tamper_findings),
+            tamper_reason="; ".join(tamper_findings),
         )
 
         if artifact_dir is not None:
@@ -69,7 +95,10 @@ def _save_artifacts(
     (artifact_dir / "prompt.md").write_text(task.prompt, encoding="utf-8")
     (artifact_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
     (artifact_dir / "pytest.log").write_text(pytest_log, encoding="utf-8")
-    (artifact_dir / "error.log").write_text(result.error, encoding="utf-8")
+    error_log = result.error
+    if result.tamper_detected:
+        error_log = (error_log + "\n" if error_log else "") + f"[TAMPER DETECTED] {result.tamper_reason}"
+    (artifact_dir / "error.log").write_text(error_log, encoding="utf-8")
     (artifact_dir / "meta.json").write_text(
         json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8",
     )

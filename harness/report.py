@@ -87,6 +87,16 @@ pass@k는 "과제당 k번을 시도하면 적어도 한 번은 성공할 확률"
     return path
 
 
+_VERDICT_LABEL = {
+    "regression": "🔻 회귀(확정)",
+    "regression_candidate": "🔶 회귀 후보(유의성 부족)",
+    "improvement": "🔺 개선(확정)",
+    "improvement_candidate": "🔸 개선 후보(유의성 부족)",
+    "no_difference": "➖ 차이 없음",
+    "insufficient_data": "❔ 표본 부족",
+}
+
+
 def write_ab_repeated_markdown(
     by_task_a: dict[str, list[RunResult]],
     by_task_b: dict[str, list[RunResult]],
@@ -94,28 +104,60 @@ def write_ab_repeated_markdown(
     agent_a: str,
     agent_b: str,
 ) -> Path:
-    """두 에이전트(또는 두 설정)의 과제별 평균 점수를 비교해 회귀를 찾는다."""
+    """두 에이전트(또는 두 설정)의 과제별 점수를 비교한다.
+
+    평균 점수가 낮다고 바로 "회귀"라고 쓰지 않는다. 부트스트랩 신뢰구간이
+    0 미만에 완전히 들어가야 "회귀(확정)"이고, 평균은 떨어졌지만 신뢰구간이
+    0을 걸치면 "회귀 후보"로만 표시한다 — 표본 5회 정도로는 우연한 차이일
+    수 있기 때문이다(자세한 설명은 README 참고).
+    """
     comps = compare_repeated(by_task_a, by_task_b)
     today = dt.date.today().isoformat()
-    regressions = [c for c in comps if c.regressed]
+    confirmed_regressions = [c for c in comps if c.verdict == "regression"]
+    candidate_regressions = [c for c in comps if c.verdict == "regression_candidate"]
+    insufficient = [c for c in comps if c.verdict == "insufficient_data"]
+
     rows = "\n".join(
-        f"| {c.task_id} | {c.score_a} ± {c.stdev_a} | {c.score_b} ± {c.stdev_b} | "
-        f"{'🔻' if c.regressed else '➖' if c.delta == 0 else '🔺'} {c.delta:+} |"
+        f"| {c.task_id} | {c.score_a} ± {c.stdev_a} (n={c.n_a}) | "
+        f"{c.score_b} ± {c.stdev_b} (n={c.n_b}) | {c.delta:+} | "
+        f"[{c.ci_low:+}, {c.ci_high:+}] | {_VERDICT_LABEL.get(c.verdict, c.verdict)} |"
         for c in comps
     )
-    md = f"""# A/B 회귀 테스트 — {today}
+
+    note = ""
+    if insufficient:
+        note = (
+            f"\n> ⚠️ {len(insufficient)}개 과제는 `--runs`가 2 미만이라 신뢰구간을 "
+            "추정할 수 없습니다(`insufficient_data`). 통계적으로 뒷받침된 판정을 "
+            "보려면 `--runs 5` 이상으로 다시 실행하세요.\n"
+        )
+
+    md = f"""# A/B 비교 — {today}
 
 **A (기준):** `{agent_a}`  **B (후보):** `{agent_b}`
 
-회귀 발생: **{len(regressions)}건** / 전체 {len(comps)}건
+CI는 `mean(B) - mean(A)`에 대한 95% 부트스트랩 신뢰구간이다. 신뢰구간이
+0을 포함하면("후보") 표본 크기로는 우연한 차이와 구분할 수 없다는 뜻이고,
+0 미만/초과에 완전히 들어가야("확정") 통계적으로 뒷받침된 차이로 본다.
+정의는 README의 "회귀 판정 방법" 절 참고.
+{note}
+확정된 회귀: **{len(confirmed_regressions)}건**  ·  회귀 후보(유의성 부족): **{len(candidate_regressions)}건**  ·  전체 {len(comps)}건
 
-| Task | A 평균±표준편차 | B 평균±표준편차 | Δ |
-|---|---|---|---|
+| Task | A 평균±표준편차 | B 평균±표준편차 | Δ | 95% CI(B-A) | 판정 |
+|---|---|---|---|---|---|
 {rows}
 """
-    if regressions:
-        md += "\n## ⚠️ 회귀 과제\n" + "\n".join(
-            f"- `{c.task_id}` ({c.score_a} → {c.score_b}, {c.delta:+})" for c in regressions
+    if confirmed_regressions:
+        md += "\n## 🔻 확정된 회귀\n" + "\n".join(
+            f"- `{c.task_id}` ({c.score_a} → {c.score_b}, {c.delta:+}, "
+            f"95% CI [{c.ci_low:+}, {c.ci_high:+}])"
+            for c in confirmed_regressions
+        ) + "\n"
+    if candidate_regressions:
+        md += "\n## 🔶 회귀 후보 (통계적으로 확정되지 않음)\n" + "\n".join(
+            f"- `{c.task_id}` ({c.score_a} → {c.score_b}, {c.delta:+}, "
+            f"95% CI [{c.ci_low:+}, {c.ci_high:+}]이 0을 포함)"
+            for c in candidate_regressions
         ) + "\n"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"ab-{today}-{agent_a.replace(':', '_')}-vs-{agent_b.replace(':', '_')}.md"

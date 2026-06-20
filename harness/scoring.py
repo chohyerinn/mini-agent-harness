@@ -1,8 +1,9 @@
-"""테스트 실행 및 수정 규모 측정."""
+"""테스트 실행, 변조 탐지, 수정 규모 측정."""
 
 from __future__ import annotations
 
 import difflib
+import hashlib
 import os
 import subprocess
 import sys
@@ -12,20 +13,50 @@ from pathlib import Path
 
 IGNORED_TOP_LEVEL = {"tests", "_solution"}
 
+# pytest 서브프로세스에 넘길 환경 변수 화이트리스트.
+# 에이전트가 호출하는 LLM API 키(ANTHROPIC_API_KEY 등) 같은 비밀값이
+# 과제 코드(테스트로 실행되는 워크스페이스)에서 os.environ으로 새어 나가지
+# 않도록, 전체 os.environ을 그대로 물려주지 않고 꼭 필요한 키만 화이트리스트로
+# 골라 넘긴다. 거부(deny) 목록 방식은 새로운 비밀 키 이름을 놓치기 쉬워서
+# 허용(allow) 목록 방식을 쓴다.
+_ALLOWED_ENV_KEYS = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
+    "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+    "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
+    "LANG", "LC_ALL", "PYTHONUTF8", "PYTHONIOENCODING",
+}
+
+# pytest/파이썬의 임포트·실행 동작에 전역으로 끼어들 수 있는 파일 이름.
+# 에이전트가 이런 파일을 새로 만들거나 고치면, 진짜 버그를 고치지 않고도
+# 테스트 결과 자체를 조작할 수 있다(예: assert를 무력화하는 conftest.py).
+HOOK_FILENAMES = {"conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "sitecustomize.py", "usercustomize.py"}
+
+
+def _sandboxed_env(workdir: Path) -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k.upper() in _ALLOWED_ENV_KEYS}
+    env["PYTHONPATH"] = str(workdir)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # 문자열 해시 무작위화(PYTHONHASHSEED)가 매 서브프로세스마다 달라지면
+    # set()/dict() 순서에 의존하는 코드의 테스트 결과가 같은 코드인데도
+    # 실행마다 달라진다. --runs로 측정하려는 건 "에이전트의 변동성"이지
+    # "채점 환경의 변동성"이 아니므로 고정한다.
+    env["PYTHONHASHSEED"] = "0"
+    return env
+
 
 def run_pytest(workdir: Path) -> tuple[int, int, str]:
     """workdir에서 pytest를 돌리고 (passed, total, log)를 반환한다.
 
     junit-xml로 결과를 파싱해 통과/전체 개수를 정확히 세고,
     stdout+stderr는 합쳐서 로그 텍스트로 그대로 보존한다(아티팩트 저장용).
+    서브프로세스 환경 변수는 화이트리스트만 물려준다(`_sandboxed_env`).
     """
     report = workdir / "_junit.xml"
-    full_env = {**os.environ, "PYTHONPATH": str(workdir), "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", "tests",
              "--junitxml", str(report), "-q", "-p", "no:cacheprovider"],
-            cwd=workdir, env=full_env,
+            cwd=workdir, env=_sandboxed_env(workdir),
             capture_output=True, text=True,
             timeout=300,
         )
@@ -45,6 +76,44 @@ def run_pytest(workdir: Path) -> tuple[int, int, str]:
     skipped = int(suite.get("skipped", 0))
     passed = total - failures - errors - skipped
     return passed, total, log
+
+
+def hash_tree(path: Path) -> str:
+    """디렉터리 트리의 (상대경로, 내용) 전체에 대한 SHA-256 해시.
+
+    정답 테스트(`tests/`)가 채점 시점까지 변경되지 않았는지 확인하는 용도.
+    """
+    h = hashlib.sha256()
+    if not path.exists():
+        return h.hexdigest()
+    for p in sorted((q for q in path.rglob("*") if q.is_file()), key=lambda q: str(q.relative_to(path))):
+        h.update(str(p.relative_to(path)).replace("\\", "/").encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def find_environment_tampering(original_workspace: Path, work: Path) -> list[str]:
+    """에이전트가 pytest/파이썬 임포트 동작에 영향을 줄 수 있는 파일
+    (conftest.py, sitecustomize.py, *.pth 등)을 새로 만들거나 고쳤는지 검사한다.
+
+    완전한 샌드박스는 아니고 가장 흔한 변조 경로만 막는 휴리스틱이다 — 더
+    강한 보장이 필요하면 컨테이너/샌드박스 실행으로 가야 한다.
+    """
+    findings = []
+    for p in work.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(work)
+        if rel.parts and rel.parts[0] == "tests":
+            continue  # tests/는 hash_tree로 별도 검사
+        if not (p.name in HOOK_FILENAMES or p.name.endswith(".pth")):
+            continue
+        original = original_workspace / rel
+        new_content = p.read_bytes()
+        old_content = original.read_bytes() if original.exists() else None
+        if old_content != new_content:
+            findings.append(f"{rel.as_posix()} ({'new' if old_content is None else 'modified'})")
+    return findings
 
 
 @dataclass

@@ -62,8 +62,14 @@ def cmd_ab(args: argparse.Namespace) -> None:
 
     path = write_ab_repeated_markdown(by_task_a, by_task_b, out_dir, agent_a.name, agent_b.name)
     comps = compare_repeated(by_task_a, by_task_b)
-    regressions = [c for c in comps if c.regressed]
-    print(f"A={agent_a.name}  B={agent_b.name}  runs={args.runs}  회귀 {len(regressions)}/{len(comps)}건")
+    confirmed = [c for c in comps if c.verdict == "regression"]
+    candidates = [c for c in comps if c.verdict == "regression_candidate"]
+    print(
+        f"A={agent_a.name}  B={agent_b.name}  runs={args.runs}  "
+        f"확정된 회귀 {len(confirmed)}/{len(comps)}건 · 회귀 후보(유의성 부족) {len(candidates)}건"
+    )
+    if args.runs < 2:
+        print("주의: --runs가 2 미만이라 모든 과제가 'insufficient_data'로 표시됩니다. --runs 5 이상을 권장합니다.")
     print(f"리포트: {path}")
 
 

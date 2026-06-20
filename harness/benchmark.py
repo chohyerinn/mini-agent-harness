@@ -8,7 +8,7 @@ from pathlib import Path
 from .agents.base import Agent
 from .models import RunResult, Task
 from .runner import run_task
-from .stats import mean, pass_at_k, stdev
+from .stats import bootstrap_mean_diff_ci, mean, pass_at_k, stdev
 
 
 def load_tasks(tasks_dir: Path) -> list[Task]:
@@ -142,15 +142,49 @@ def summarize_repeated(
     return {"k_values": ks, "overall": overall, "tasks": [s.to_dict(ks) for s in stats]}
 
 
+_MIN_RUNS_FOR_VERDICT = 2  # 신뢰구간을 추정하려면 양쪽 다 최소 2회 실행 필요
+
+
+def _verdict(n_a: int, n_b: int, delta: float, ci_low: float, ci_high: float) -> str:
+    """평균 점수 차이(delta)만으로 회귀를 단정하지 않기 위한 판정.
+
+    표본이 부족하면("표본이 5개라 우연히 갈렸다"를 배제할 수 없는 상황)
+    "insufficient_data"로 분명히 표시한다. 표본이 충분해도 신뢰구간이 0을
+    걸치면 "통계적으로 뒷받침되지 않은 후보(candidate)"로만 표시하고,
+    신뢰구간이 한쪽으로 완전히 떨어져야만 확정된 regression/improvement로
+    본다.
+    """
+    if n_a < _MIN_RUNS_FOR_VERDICT or n_b < _MIN_RUNS_FOR_VERDICT:
+        return "insufficient_data"
+    if ci_high < 0:
+        return "regression"
+    if ci_low > 0:
+        return "improvement"
+    if delta < 0:
+        return "regression_candidate"
+    if delta > 0:
+        return "improvement_candidate"
+    return "no_difference"
+
+
 @dataclass
 class ABComparison:
-    """두 에이전트 설정의 과제별 비교(평균 점수 기준). 회귀(regression) 탐지에 사용."""
+    """두 에이전트 설정의 과제별 비교.
+
+    평균 점수 차이(delta)뿐 아니라 부트스트랩 신뢰구간(ci_low/ci_high)과
+    verdict를 함께 본다 — delta가 음수라고 바로 "회귀"로 단정하지 않는다.
+    """
 
     task_id: str
     score_a: float
     score_b: float
     stdev_a: float = 0.0
     stdev_b: float = 0.0
+    n_a: int = 0
+    n_b: int = 0
+    ci_low: float = 0.0
+    ci_high: float = 0.0
+    verdict: str = "insufficient_data"
 
     @property
     def delta(self) -> float:
@@ -158,25 +192,26 @@ class ABComparison:
 
     @property
     def regressed(self) -> bool:
-        return self.score_b < self.score_a
+        """통계적으로 뒷받침된 회귀만 True. 단순히 평균이 낮다고 True가 되지
+        않는다 — 신뢰구간이 0 미만에 완전히 들어가야 한다."""
+        return self.verdict == "regression"
 
-
-def compare(results_a: list[RunResult], results_b: list[RunResult]) -> list[ABComparison]:
-    by_id_b = {r.task_id: r for r in results_b}
-    out = []
-    for ra in results_a:
-        rb = by_id_b.get(ra.task_id)
-        if rb is None:
-            continue
-        out.append(ABComparison(ra.task_id, ra.score, rb.score))
-    return out
+    @property
+    def is_candidate(self) -> bool:
+        """평균은 떨어졌지만(또는 올랐지만) 신뢰구간이 0을 걸쳐 통계적으로
+        확정할 수 없는 경우."""
+        return self.verdict in {"regression_candidate", "improvement_candidate"}
 
 
 def compare_repeated(
     by_task_a: dict[str, list[RunResult]], by_task_b: dict[str, list[RunResult]],
 ) -> list[ABComparison]:
-    """반복 실행 결과를 과제별 평균 점수로 비교한다. 표준편차도 함께 남겨서
-    "한 번 운 나쁘게 진 것"과 "꾸준히 진 것"을 구분할 수 있게 한다.
+    """반복 실행 결과를 과제별로 비교한다.
+
+    평균 점수만 보고 회귀를 단정하지 않도록, 부트스트랩으로 평균차이의
+    신뢰구간을 추정해서 "통계적으로 뒷받침된 회귀(regression)"와 "회귀로
+    보이지만 표본이 적어 확신할 수 없는 후보(regression_candidate)"를
+    구분한다(`_verdict`).
     """
     stats_a = {s.task_id: s for s in task_stats(by_task_a)}
     stats_b = {s.task_id: s for s in task_stats(by_task_b)}
@@ -185,5 +220,11 @@ def compare_repeated(
         sb = stats_b.get(task_id)
         if sb is None:
             continue
-        out.append(ABComparison(task_id, sa.avg_score, sb.avg_score, sa.stdev_score, sb.stdev_score))
+        ci_low, ci_high = bootstrap_mean_diff_ci(sa.scores, sb.scores)
+        delta = round(sb.avg_score - sa.avg_score, 2)
+        verdict = _verdict(sa.runs, sb.runs, delta, ci_low, ci_high)
+        out.append(ABComparison(
+            task_id, sa.avg_score, sb.avg_score, sa.stdev_score, sb.stdev_score,
+            sa.runs, sb.runs, ci_low, ci_high, verdict,
+        ))
     return out
