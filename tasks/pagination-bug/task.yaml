@@ -1,0 +1,8 @@
+id: pagination-bug
+title: page_count가 정수 나눗셈으로 마지막 부분 페이지를 누락함
+category: bugfix
+difficulty: medium
+source: synthetic
+source_ref: null
+source_commit: null
+license: null

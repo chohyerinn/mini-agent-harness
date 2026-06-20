@@ -109,14 +109,19 @@ reports/runs/<timestamp>_<agent>/<task-id>/run-<n>/
   pytest.log    # pytest stdout+stderr 전체
   error.log     # 에이전트 실행 중 발생한 예외 (없으면 빈 파일)
   meta.json     # passed/total/score/files_changed/lines_changed/duration_s/
-                # prompt_hash/agent_fingerprint/tamper_detected/tamper_reason
+                # prompt_hash/agent_fingerprint/tamper_detected/tamper_reason/
+                # environment(harness 커밋 SHA·파이썬·플랫폼·의존성 버전)
 ```
 
 `prompt_hash`는 이번 실행에 실제로 쓰인 prompt의 SHA-256 앞 12자(같은
 prompt가 실행마다 그대로 쓰였는지 확인용)이고, `agent_fingerprint`는
-에이전트가 스스로 보고하는 모델명/확률 같은 메타데이터입니다(에이전트의
-`fingerprint` 속성을 그대로 기록 — 구현은 `harness/agents/claude.py`,
-`harness/agents/mock.py` 참고).
+에이전트가 스스로 보고하는 실행 설정입니다(Claude 어댑터는 `model`,
+`max_tokens`, `thinking`, anthropic SDK 버전을 기록 — `harness/agents/claude.py`,
+`harness/agents/mock.py` 참고). `environment`는 결과를 나중에 재현·대조할 수
+있도록 **harness 커밋 SHA(워킹트리가 더러우면 `-dirty`), 파이썬·플랫폼·핵심
+의존성(pytest/PyYAML/anthropic) 버전**을 함께 남긴 것입니다
+(`harness/runner.py::runtime_metadata`). 같은 점수라도 "어떤 harness 버전·
+환경에서 나온 결과인지"를 구분할 수 있습니다.
 
 `ab` 명령은 두 에이전트의 아티팩트를 같은 타임스탬프 아래
 `.../<a-agent>/...`, `.../<b-agent>/...`로 나란히 남깁니다.
@@ -134,10 +139,14 @@ prompt가 실행마다 그대로 쓰였는지 확인용)이고, `agent_fingerpri
    `tests/`에 심어 놔도 그대로 덮어써집니다.
 3. **pytest 실행 전후로 `tests/`의 SHA-256 해시를 비교합니다.** pytest
    실행 중에(예: 악의적인 플러그인을 통해) 테스트 파일이 바뀌면 감지합니다.
-4. **`conftest.py`, `pytest.ini`, `sitecustomize.py`, `*.pth` 등 pytest나
-   파이썬 임포트 동작에 전역으로 끼어들 수 있는 파일이 새로 생기거나
-   바뀌었는지 검사합니다**(`harness/scoring.py::find_environment_tampering`).
-   원래 워크스페이스에 없던 파일이 새로 나타나면 변조로 간주합니다.
+4. **`conftest.py`, `pytest.ini`, `pyproject.toml`, `setup.cfg`,
+   `sitecustomize.py`, `*.pth` 등 pytest나 파이썬 임포트 동작에 전역으로
+   끼어들 수 있는 파일이 새로 생기거나 바뀌었는지 검사합니다**
+   (`harness/scoring.py::find_environment_tampering`). 채점 서브프로세스의
+   PYTHONPATH에 워크스페이스가 들어가므로, `pytest.py`/`pluggy.py`처럼
+   기존 모듈을 같은 이름으로 가리는(shadowing) 파일도 함께 막습니다. 원래
+   워크스페이스에 있던, 바뀌지 않은 설정 파일은 오탐하지 않습니다(before/after
+   내용 비교).
 5. **pytest 서브프로세스에는 전체 `os.environ`을 물려주지 않고, 화이트리스트
    (`PATH`, `PYTHONPATH` 등 실행에 꼭 필요한 키)만 넘깁니다**
    (`harness/scoring.py::_sandboxed_env`). 에이전트를 호출하는 데 쓰인
@@ -192,7 +201,7 @@ tasks/<task-id>/
 과제를 실행할 때는 `workspace/`를 임시 폴더로 복사해서 사용합니다. 원본
 과제 파일은 수정하지 않습니다.
 
-현재 7개 과제가 들어 있으며, 모두 재현 가능하도록 직접 작성한 합성
+현재 9개 과제가 들어 있으며, 모두 재현 가능하도록 직접 작성한 합성
 (synthetic) 버그입니다. 실제 PR 이력을 무리하게 긁어모으는 대신, 난이도별로
 작고 검증된 버그를 먼저 갖추는 쪽을 택했습니다. `task.yaml`에는
 `source: synthetic | pr` 필드가 있어서, 나중에 실제 PR 기반 과제를 추가할 때
@@ -208,6 +217,8 @@ tasks/<task-id>/
 | `merge-intervals-bug` | medium | 입력이 정렬돼 있다고 가정해 정렬 안 된 입력에서 병합 실패 |
 | `csv-line-bug` | medium | 인용부호 안의 쉼표까지 구분자로 잘못 처리 |
 | `retry-backoff-bug` | hard | `attempts-1`번만 시도하고 마지막 예외를 삼켜 `None` 반환 |
+| `pagination-bug` | medium | `//` 정수 나눗셈만 써서 마지막 부분 페이지를 누락(올림 빠짐) |
+| `mutable-default-bug` | medium | 가변 기본 인자가 호출 간 공유돼 결과가 누적됨 |
 
 ## 실험: mock 에이전트 3종을 각 5회 실행
 
@@ -219,7 +230,9 @@ tasks/<task-id>/
 여러 번 돌려도 결과가 갈리는 상황을 재현하기 위해 추가했습니다
 (`harness/agents/mock.py::FlakyMockAgent`).
 
-7개 과제 × 5회 실행, `python -m harness.cli run --agent <agent> --runs 5`:
+7개 과제 × 5회 실행, `python -m harness.cli run --agent <agent> --runs 5`
+(아래 수치는 `pagination-bug`/`mutable-default-bug`를 추가하기 전, 처음 7개
+과제 기준입니다):
 
 | 에이전트 | solve rate | 평균 점수 | 평균 표준편차 | pass@1 | pass@5 |
 |---|---|---|---|---|---|
@@ -310,29 +323,34 @@ class MyAgent:
 
 ## CI
 
-`.github/workflows/ci.yml`은 `mock:solve`가 모든 과제를 풀고(`solve_rate
-== 1.0`) `mock:noop`이 아무 과제도 풀지 않는지(`solve_rate == 0.0`)를
-확인하는 스모크 테스트와, `--runs`를 사용한 `ab` 실행이 에러 없이 끝나는지를
-확인합니다. 실제 LLM 에이전트의 점수를 CI에서 매번 재현하는 것은 비용·
-비결정성 때문에 다루지 않습니다.
+`.github/workflows/ci.yml`은 (1) harness 자체의 단위 테스트(`pytest tests` —
+pass@k·부트스트랩 CI 같은 통계 함수, 변조 탐지, 테스트 격리), (2) `mock:solve`가
+모든 과제를 풀고(`solve_rate == 1.0`) `mock:noop`이 아무 과제도 풀지
+않는지(`solve_rate == 0.0`) 확인하는 스모크 테스트, (3) `--runs`를 사용한 `ab`
+실행이 에러 없이 끝나는지를 확인합니다. 실제 LLM 에이전트의 점수를 CI에서
+매번 재현하는 것은 비용·비결정성 때문에 다루지 않습니다.
+
+harness 단위 테스트는 로컬에서 `pytest tests`로 바로 돌릴 수 있습니다
+(`tests/test_stats.py`, `test_scoring.py`, `test_runner.py`, `test_benchmark.py`).
 
 ## 남은 작업
 
 - **컨테이너/샌드박스 격리.** 지금의 변조 탐지(파일 해시·환경 변수
   화이트리스트)는 휴리스틱이고, 진짜 OS 수준 격리는 아닙니다. 신뢰할 수
   없는 에이전트를 돌리려면 Docker 등 컨테이너 안에서 실행하는 게 다음 단계.
-- **모델 응답 원문·토큰 수·비용 기록.** 지금은 prompt/diff/pytest 로그는
-  남지만 Claude의 실제 응답 텍스트나 API 메타데이터(토큰 수, 비용, 오류
-  유형)는 저장하지 않아 "왜 이 diff가 나왔는지"를 완전히 재현하기 어렵습니다.
+- **모델 응답 원문·토큰 수·비용 기록.** 실행 환경 메타데이터(harness 커밋
+  SHA·파이썬·의존성 버전)와 에이전트 설정(`model`/`max_tokens`/`thinking`/SDK
+  버전)은 이제 `meta.json`에 남습니다. 다만 Claude의 **실제 응답 텍스트와 API
+  사용량(토큰 수·비용)**, 오류 유형은 아직 저장하지 않아, "왜 이 diff가
+  나왔는지"를 완전히 재현하려면 응답 원문 저장(선택적)이 더 필요합니다.
 - **Claude 어댑터의 입력·비용 상한.** 지금은 워크스페이스의 모든 `*.py`를
   한 번에 보내고 `max_tokens=16000`으로 호출합니다. 수정 허용 파일 제한,
   파일 수/바이트 수 상한, timeout/재시도/비용 상한이 필요합니다.
-- **실제 PR 기반 과제 추가.** 지금 7개는 전부 합성(synthetic) 버그입니다.
-  `task.yaml`의 `source: pr` 스키마(원본 PR 링크/기준 커밋 SHA/라이선스)는
-  이미 준비돼 있으니, 2~3개만이라도 실제 오픈소스 PR에서 가져오면 좋습니다.
-- **harness 자체의 단위 테스트.** `pass_at_k`/`bootstrap_mean_diff_ci` 같은
-  통계 함수와 변조 탐지 로직은 지금 수동으로(adversarial mock 에이전트로)
-  검증했고, pytest 기반 단위 테스트로 고정해 두지 않았습니다.
+- **실제 PR 기반 과제 추가.** 지금 9개는 전부 합성(synthetic) 버그입니다.
+  `pagination-bug`/`mutable-default-bug`는 실무에서 흔한 버그 패턴(올림 누락,
+  가변 기본 인자)을 본떴지만 여전히 직접 작성한 것입니다. `task.yaml`의
+  `source: pr` 스키마(원본 PR 링크/기준 커밋 SHA/라이선스)가 준비돼 있으니,
+  2~3개만이라도 실제 오픈소스 PR에서 라이선스를 확인해 가져오면 좋습니다.
 - Claude 외 다른 LLM 에이전트 어댑터 추가 (OpenAI 등)
 - 여러 리포트를 모아 추이를 볼 수 있는 간단한 화면
 

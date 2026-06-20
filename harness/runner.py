@@ -2,16 +2,64 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import platform
 import shutil
+import subprocess
 import tempfile
 import time
+from importlib import metadata as _im
 from pathlib import Path
 
 from .agents.base import Agent
 from .models import RunResult, Task
 from .scoring import compute_diff, find_environment_tampering, hash_tree, run_pytest
+
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _git_sha() -> str:
+    """harness 저장소의 현재 커밋 SHA(짧은 형식). 워킹트리가 더러우면 `-dirty`.
+
+    git이 없거나 저장소가 아니면 'unknown'을 반환해 실행을 막지 않는다.
+    """
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=_ROOT, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if not sha:
+            return "unknown"
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=_ROOT, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        return sha + ("-dirty" if dirty else "")
+    except Exception:
+        return "unknown"
+
+
+@functools.lru_cache(maxsize=1)
+def runtime_metadata() -> dict:
+    """결과를 재현·대조하는 데 필요한 실행 환경 메타데이터.
+
+    같은 점수라도 "어떤 harness 버전 / 어떤 파이썬·의존성에서 나온 결과인지"를
+    구분할 수 있도록 meta.json에 함께 남긴다. 프로세스당 한 번만 계산한다.
+    """
+    def _ver(pkg: str) -> str | None:
+        try:
+            return _im.version(pkg)
+        except Exception:
+            return None
+
+    return {
+        "harness_commit": _git_sha(),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": {p: _ver(p) for p in ("pytest", "PyYAML", "anthropic")},
+    }
 
 
 def run_task(
@@ -99,6 +147,7 @@ def _save_artifacts(
     if result.tamper_detected:
         error_log = (error_log + "\n" if error_log else "") + f"[TAMPER DETECTED] {result.tamper_reason}"
     (artifact_dir / "error.log").write_text(error_log, encoding="utf-8")
+    meta = {**result.to_dict(), "environment": runtime_metadata()}
     (artifact_dir / "meta.json").write_text(
-        json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8",
     )

@@ -39,13 +39,24 @@ def _read_sources(workdir: Path) -> dict[str, str]:
 
 
 class ClaudeAgent:
+    MAX_TOKENS = 16000
+
     def __init__(self, model: str = "claude-opus-4-8") -> None:
         self.model = model
         self.name = f"claude:{model}"
-        self.fingerprint = {"model": model}
+        # 실행 메타데이터: meta.json의 agent_fingerprint로 그대로 기록된다.
+        # 어떤 모델 설정으로 받은 결과인지 나중에 재현·대조할 수 있게 한다.
+        # sdk 버전은 anthropic을 임포트한 뒤 run()에서 채운다.
+        self.fingerprint = {
+            "model": model,
+            "max_tokens": self.MAX_TOKENS,
+            "thinking": "adaptive",
+        }
 
     def run(self, workdir: Path, prompt: str) -> None:
         import anthropic  # 지연 임포트: claude 에이전트를 쓸 때만 필요
+
+        self.fingerprint["sdk"] = getattr(anthropic, "__version__", "unknown")
 
         sources = _read_sources(workdir)
         files_blob = "\n\n".join(
@@ -56,7 +67,7 @@ class ClaudeAgent:
         client = anthropic.Anthropic()
         response = client.messages.create(
             model=self.model,
-            max_tokens=16000,
+            max_tokens=self.MAX_TOKENS,
             system=SYSTEM,
             thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": user}],

@@ -29,7 +29,17 @@ _ALLOWED_ENV_KEYS = {
 # pytest/파이썬의 임포트·실행 동작에 전역으로 끼어들 수 있는 파일 이름.
 # 에이전트가 이런 파일을 새로 만들거나 고치면, 진짜 버그를 고치지 않고도
 # 테스트 결과 자체를 조작할 수 있다(예: assert를 무력화하는 conftest.py).
-HOOK_FILENAMES = {"conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "sitecustomize.py", "usercustomize.py"}
+#
+# pyproject.toml도 [tool.pytest.ini_options]로 pytest 동작을 바꿀 수 있어 포함한다.
+# 또 채점 서브프로세스의 PYTHONPATH에 워크스페이스가 들어가므로, pytest/pluggy
+# 같은 모듈을 같은 이름의 파일로 가려(shadow) 동작을 바꿀 수 있다 — 흔한
+# shadowing 이름도 막는다. 사전(unchanged) 파일은 before/after 비교에서 걸리지
+# 않으므로, 워크스페이스에 원래 있던 설정 파일은 오탐하지 않는다.
+HOOK_FILENAMES = {
+    "conftest.py", "pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg",
+    "sitecustomize.py", "usercustomize.py",
+    "pytest.py", "pluggy.py", "py.py", "_pytest.py",
+}
 
 
 def _sandboxed_env(workdir: Path) -> dict[str, str]:

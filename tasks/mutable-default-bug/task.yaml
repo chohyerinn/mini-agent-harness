@@ -1,0 +1,8 @@
+id: mutable-default-bug
+title: group_by_parity의 가변 기본 인자가 호출 간에 상태를 공유함
+category: bugfix
+difficulty: medium
+source: synthetic
+source_ref: null
+source_commit: null
+license: null
