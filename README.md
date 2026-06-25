@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/chohyerinn/mini-agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/chohyerinn/mini-agent-harness/actions/workflows/ci.yml)
 
-코딩 에이전트가 버그를 얼마나 안정적으로 고치는지 확인해 보기 위한 작은 평가 하니스입니다.
+코딩 에이전트가 버그를 얼마나 안정적으로 고치는지 확인해 보기 위한 작은 평가 harness 입니다!
 
-처음에는 “한 번 성공했는가”만 보면 될 줄 알았는데, LLM은 같은 입력에도 매번 결과가 달라집니다. 그래서 이 프로젝트는 단일 실행 결과보다 **반복 실행했을 때의 통과율, 분산, 실패 유형, 실행 시간**을 같이 봅니다.
+처음에는 “한 번 성공했는가”만 보면 될 줄 알았는데 LLM은 같은 입력에도 매번 결과가 달라집니다. 그래서 이 프로젝트는 단일 실행 결과보다 **반복 실행했을 때의 통과율, 분산, 실패 유형, 실행 시간**을 같이 봅니다.
 
 지금 중심에 둔 모델은 **CLOVA Studio / HyperCLOVA X**입니다. 같은 CLOVA 모델을 단일 코딩 에이전트로도 돌리고, Planner-Coder-Reviewer 구조의 멀티에이전트로도 돌려 비교해 볼 수 있게 했습니다.
 
@@ -21,7 +21,7 @@ tasks/<task-id>/
   task.yaml       # 출처, 라이선스, 난이도 같은 메타데이터
 ```
 
-실행할 때마다 하니스는 임시 작업 폴더를 만들고, 에이전트에게는 `tests/`를 보여주지 않습니다. 에이전트가 코드를 수정한 뒤에만 테스트를 복사해서 채점합니다. `conftest.py`, `pytest.py`, `pyproject.toml` 같은 파일로 채점 환경을 건드리려는 변경은 변조로 처리합니다.
+실행할 때마다 하니스는 임시 작업 폴더를 만들고 에이전트에게는 `tests/`를 보여주지 않습니다. 에이전트가 코드를 수정한 뒤에만 테스트를 복사해서 채점합니다. `conftest.py`, `pytest.py`, `pyproject.toml` 같은 파일로 채점 환경을 건드리려는 변경은 변조로 처리합니다.
 
 리포트에는 다음 값이 남습니다.
 
@@ -37,7 +37,7 @@ tasks/<task-id>/
 
 ## 로컬에서 감 잡기
 
-API 키 없이도 mock 에이전트로 하니스 흐름을 확인할 수 있습니다.
+API 키 없이도 mock 에이전트로 harness 흐름을 확인할 수 있습니다.
 
 ```bash
 git clone https://github.com/chohyerinn/mini-agent-harness.git
@@ -142,7 +142,7 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 결과만 보면 멀티에이전트 쪽이 solved run은 더 많았습니다. `csv-line-bug`, `dedupe-bug`, `flatten-bug`, `merge-intervals-bug`, `no-proxy-boundary-bug`, `retry-backoff-bug`에서는 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
 
-그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 나왔습니다. 토큰 사용량도 약 3.3배 늘었습니다. 좋아진 부분은 있었지만, 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
+그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 나왔습니다. 토큰 사용량도 약 3.3배 늘었습니다. 좋아진 부분은 있었지만 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
 
 `slugify-bug` 회귀는 특히 기억해 둘 만했습니다. 단일 에이전트는 3번 모두 통과했지만, 멀티에이전트는 일부 실행에서 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
 
@@ -161,7 +161,7 @@ python -m harness.cli run --agent multi:clova --runs 5
 | `deprecated-label-bug` | deprecated label 공백 처리 버그 | [pallets/click#3509](https://github.com/pallets/click/pull/3509), commit `82f377c`, BSD-3-Clause |
 | `no-proxy-boundary-bug` | `no_proxy` 도메인 경계 매칭 버그 | [psf/requests#7427](https://github.com/psf/requests/pull/7427), commit `52220f6`, Apache-2.0 |
 
-## 개발자가 보는 파일
+## 파일 구조
 
 ```text
 harness/
@@ -182,5 +182,3 @@ tests/            # 하니스 자체 테스트
 ```bash
 pytest tests -q
 ```
-
-GitHub Actions에서는 실제 CLOVA API를 호출하지 않습니다. 비용과 비밀키 문제를 피하기 위해 mock 에이전트와 단위 테스트만 실행합니다. 실제 모델 평가는 로컬에서 API 키를 설정한 뒤 실행합니다.
