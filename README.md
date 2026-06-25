@@ -28,12 +28,22 @@ tasks/<task-id>/
 - solve rate
 - 평균 점수와 표준편차
 - pass@k
-- bootstrap 95% CI 기반 A/B 비교
+- 과제별 bootstrap 95% CI 기반 A/B 비교
+- suite 전체 solve rate 유의성: paired bootstrap CI, McNemar test
+- 비용 효율: 추가 1건 해결당 토큰(한계비용)
 - 실행 시간
 - token usage
 - tokens/sec per solved run
 - 실패 유형: planning error, implementation error, reviewer miss 등
 - 응답 복구 여부: `<file>` 형식 대신 단일 Python 코드블록이 온 경우 안전하게 복구했는지 기록
+
+## 숫자를 볼 때의 기준
+
+이 프로젝트에서 A/B 결과는 평균 점수 하나로만 판단하지 않습니다. 같은 과제 집합을 두 설정이 함께 풀기 때문에, suite 전체 solve rate 차이는 과제 단위 paired bootstrap CI와 `(task, run)` 짝 McNemar test로 따로 확인합니다.
+
+예를 들어 멀티에이전트가 `49% → 58%`처럼 더 좋아 보이더라도, CI가 0을 포함하거나 McNemar p-value가 크면 “개선 방향은 보였지만 아직 유의하다고 말하기 어렵다”고 봅니다. 반대로 유의한 차이가 있더라도 token usage가 크게 늘었다면, 추가 1건을 더 풀기 위해 몇 토큰을 더 썼는지 한계비용까지 같이 봅니다.
+
+이 기준을 넣은 이유는 단순합니다. 코딩 에이전트 평가는 “더 많이 풀었나?”에서 끝나면 안 되고, 그 차이가 우연인지, 비용을 감수할 만큼 의미 있는지까지 같이 봐야 하기 때문입니다.
 
 ## 로컬에서 감 잡기
 
@@ -172,7 +182,7 @@ harness/
   runner.py       # 작업 폴더 준비, 테스트 격리, 아티팩트 저장
   scoring.py      # pytest 실행, diff 생성, 변조 탐지
   benchmark.py    # 반복 실행과 A/B 비교
-  stats.py        # pass@k, bootstrap CI
+  stats.py        # pass@k, bootstrap CI, McNemar test
   trace.py        # token/cost/time/failure summary
   agents/
     clova.py      # CLOVA 단일/멀티 에이전트
