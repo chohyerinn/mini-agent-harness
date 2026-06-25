@@ -1,5 +1,7 @@
 # mini-agent-harness
 
+[![CI](https://github.com/chohyerinn/mini-agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/chohyerinn/mini-agent-harness/actions/workflows/ci.yml)
+
 코딩 에이전트가 버그를 얼마나 안정적으로 고치는지 확인해 보기 위한 작은 평가 하니스입니다.
 
 처음에는 “한 번 성공했는가”만 보면 될 줄 알았는데, LLM은 같은 입력에도 매번 결과가 달라집니다. 그래서 이 프로젝트는 단일 실행 결과보다 **반복 실행했을 때의 통과율, 분산, 실패 유형, 실행 시간**을 같이 봅니다.
@@ -131,6 +133,8 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 11개 과제를 각각 3번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
 
+표본은 아직 작습니다. 11개 과제에 대해 3회씩만 반복했기 때문에, 아래 숫자는 일반적인 성능 결론이라기보다 이 작은 과제 집합에서 관찰한 경향으로 보는 것이 맞습니다.
+
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
 | `clova:HCX-005` | 19 | 33 | 58% | 20,845 |
@@ -140,13 +144,17 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 나왔습니다. 토큰 사용량도 약 3.3배 늘었습니다. 좋아진 부분은 있었지만, 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
 
+`slugify-bug` 회귀는 특히 기억해 둘 만했습니다. 단일 에이전트는 3번 모두 통과했지만, 멀티에이전트는 일부 실행에서 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
+
 실행 중에는 `multi:clova`에서 429 rate limit도 만났습니다. 과제 하나를 풀 때 모델을 여러 번 부르기 때문에 생긴 문제였습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능만 볼 게 아니라 실제 API 제한과 운영 비용도 같이 봐야 한다는 걸 확인한 부분이었습니다.
 
 이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 다만 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 역할을 나눈 구조가 단일 호출보다 안정적인 경우가 있었습니다.
 
 ## 현재 과제
 
-현재 11개 과제가 들어 있습니다. 대부분은 재현 가능한 synthetic bug이고, 일부는 실제 오픈소스 PR의 수정 내용을 작은 함수 단위로 줄여 만든 과제입니다.
+현재 11개 과제가 들어 있습니다. 9개는 재현 가능한 synthetic bug이고, 2개는 실제 오픈소스 PR의 수정 내용을 작은 함수 단위로 줄여 만든 과제입니다.
+
+이 프로젝트는 [SWE-bench](https://github.com/swe-bench/SWE-bench)처럼 실제 GitHub issue와 큰 코드베이스를 대상으로 하는 표준 벤치마크를 대체하려는 것은 아닙니다. 여기서는 작은 과제를 이용해 에이전트 반복 실행, 테스트 격리, A/B 비교, 실패 유형 기록 같은 평가 흐름을 직접 구현해 보는 데 초점을 두었습니다.
 
 | Task | Origin | Provenance |
 | --- | --- | --- |
