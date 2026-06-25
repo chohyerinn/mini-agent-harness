@@ -131,12 +131,12 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
-| `clova:HCX-005` | 19 | 33 | 58% | 20,855 |
-| `multi:clova:HCX-005` | 25 | 33 | 76% | 68,963 |
+| `clova:HCX-005` | 19 | 33 | 58% | 20,845 |
+| `multi:clova:HCX-005` | 25 | 33 | 76% | 67,747 |
 
-멀티에이전트는 `dedupe-bug`, `flatten-bug`, `no-proxy-boundary-bug`, `csv-line-bug`에서 확정 개선을 보였습니다. 특히 단일 에이전트가 0점에 가까웠던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 개선 폭이 컸습니다.
+멀티에이전트는 `csv-line-bug`, `dedupe-bug`, `flatten-bug`, `merge-intervals-bug`, `no-proxy-boundary-bug`, `retry-backoff-bug`에서 확정 개선을 보였습니다. 특히 단일 에이전트가 0점에 가까웠던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 개선 폭이 컸습니다.
 
-다만 좋은 결과만 있었던 것은 아닙니다. `binary-search-bug`, `pagination-bug`처럼 단일 에이전트도 거의 만점에 가까웠던 쉬운 과제에서는 멀티에이전트가 아주 작은 점수 회귀를 보였습니다. 또한 멀티에이전트는 호출 수가 많아 토큰 사용량이 약 3.3배 증가했습니다.
+다만 좋은 결과만 있었던 것은 아닙니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 발생했습니다. 또한 멀티에이전트는 호출 수가 많아 토큰 사용량이 약 3.3배 증가했습니다.
 
 이 실험 뒤에는 `multi:clova` 실행 중 429 rate limit이 발생했습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능뿐 아니라 실제 운영 비용과 API 제한도 같이 봐야 한다는 점을 확인한 사례였습니다.
 
