@@ -147,18 +147,20 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
-| `clova:HCX-005` | 22 | 45 | 49% | 29,115 |
-| `multi:clova:HCX-005` | 26 | 45 | 58% | 95,642 |
+| `clova:HCX-005` | 22 | 45 | 49% | 28,746 |
+| `multi:clova:HCX-005` | 28 | 45 | 62% | 95,962 |
 
-결과만 보면 멀티에이전트 쪽이 solved run은 조금 더 많았습니다. `csv-line-bug`, `dedupe-bug`, `flatten-bug`, `host-header-invalid-bug`, `no-proxy-boundary-bug`에서는 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
+결과만 보면 멀티에이전트 쪽이 solved run은 더 많았습니다. `dedupe-bug`, `flatten-bug`, `host-header-invalid-bug`, `no-proxy-boundary-bug`에서는 과제별 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
 
-그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. `binary-search-bug`와 `default-map-nargs-bug`에서는 확정 회귀가 나왔습니다. 토큰 사용량도 약 3.3배 늘었고, solved run 하나당 걸린 시간도 `7.254s`에서 `23.629s`로 늘었습니다. 좋아진 부분은 있었지만 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
+그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. suite 전체 solve rate는 `49% → 62%`로 올라 보였지만, paired bootstrap 95% CI가 `[-0.111, +0.400]`으로 0을 포함했고 McNemar p-value도 `0.1796`이었습니다. 이 표본에서는 개선 방향은 보였지만, 통계적으로 확정된 개선이라고 말하기는 어렵습니다.
 
-초기 실험에서 본 `slugify-bug` 실패도 기억해 둘 만했습니다. 단일 에이전트는 통과했지만, 멀티에이전트는 일부 실행에서 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
+비용도 같이 봐야 했습니다. 토큰 사용량은 약 3.3배 늘었고, solved run 하나당 걸린 시간도 `8.479s`에서 `23.358s`로 늘었습니다. 추가 성공 1건당 한계비용은 약 `11,203` tokens였습니다. 좋아진 부분은 있었지만 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
+
+회귀도 있었습니다. `binary-search-bug`, `default-map-nargs-bug`, `slugify-bug`에서는 확정 회귀가 나왔습니다. 특히 `slugify-bug`에서는 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들 수 있었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
 
 실행 중에는 `multi:clova`에서 429 rate limit도 만났습니다. 과제 하나를 풀 때 모델을 여러 번 부르기 때문에 생긴 문제였습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능만 볼 게 아니라 실제 API 제한과 운영 비용도 같이 봐야 한다는 걸 확인한 부분이었습니다.
 
-이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 과제 수를 11개에서 15개로 늘리자 개선폭도 줄어들었습니다. 그래도 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 역할을 나눈 구조가 단일 호출보다 안정적인 경우가 있었습니다.
+이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 그래도 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 역할을 나눈 구조가 단일 호출보다 안정적인 경우가 있었습니다. 반대로 간단한 문자열 처리나 작은 알고리즘 문제에서는 리뷰 단계가 과수정으로 이어질 수 있었습니다.
 
 ## 현재 과제
 
