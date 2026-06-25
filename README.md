@@ -1,10 +1,10 @@
 # mini-agent-harness
 
-코딩 에이전트가 버그를 얼마나 안정적으로 고치는지 확인하기 위한 작은 평가 하니스입니다.
+코딩 에이전트가 버그를 얼마나 안정적으로 고치는지 확인해 보기 위한 작은 평가 하니스입니다.
 
 처음에는 “한 번 성공했는가”만 보면 될 줄 알았는데, LLM은 같은 입력에도 매번 결과가 달라집니다. 그래서 이 프로젝트는 단일 실행 결과보다 **반복 실행했을 때의 통과율, 분산, 실패 유형, 실행 시간**을 같이 봅니다.
 
-지금 중심에 둔 모델은 **CLOVA Studio / HyperCLOVA X**입니다. 같은 CLOVA 모델을 단일 코딩 에이전트로도 돌리고, Planner-Coder-Reviewer 구조의 멀티에이전트로도 돌려 비교할 수 있게 했습니다.
+지금 중심에 둔 모델은 **CLOVA Studio / HyperCLOVA X**입니다. 같은 CLOVA 모델을 단일 코딩 에이전트로도 돌리고, Planner-Coder-Reviewer 구조의 멀티에이전트로도 돌려 비교해 볼 수 있게 했습니다.
 
 ## 평가 방식
 
@@ -123,24 +123,26 @@ Reviewer -> 수정 결과 검토
 python -m harness.cli run --agent multi:clova --runs 5
 ```
 
-둘을 비교하면 “멀티에이전트 구조가 정말 더 나은가?”를 감이 아니라 같은 과제, 같은 채점 기준, 반복 실행 결과로 볼 수 있습니다.
+둘을 비교하면 “멀티에이전트 구조가 정말 더 나은가?”를 감으로만 보지 않고, 같은 과제와 같은 채점 기준에서 확인할 수 있습니다.
 
 ## 실험 메모
 
-2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 각 과제를 3번씩 반복 실행했고, 같은 11개 과제와 같은 채점 기준을 사용했습니다.
+처음에는 Planner-Coder-Reviewer처럼 역할을 나누면 당연히 더 좋아질 것 같았습니다. 그런데 실제로는 호출 횟수도 늘고, 쉬운 문제에서는 오히려 불필요한 수정이 생길 수 있어서 한 번 숫자로 확인해 보고 싶었습니다.
+
+2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 11개 과제를 각각 3번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
 
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
 | `clova:HCX-005` | 19 | 33 | 58% | 20,845 |
 | `multi:clova:HCX-005` | 25 | 33 | 76% | 67,747 |
 
-멀티에이전트는 `csv-line-bug`, `dedupe-bug`, `flatten-bug`, `merge-intervals-bug`, `no-proxy-boundary-bug`, `retry-backoff-bug`에서 확정 개선을 보였습니다. 특히 단일 에이전트가 0점에 가까웠던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 개선 폭이 컸습니다.
+결과만 보면 멀티에이전트 쪽이 solved run은 더 많았습니다. `csv-line-bug`, `dedupe-bug`, `flatten-bug`, `merge-intervals-bug`, `no-proxy-boundary-bug`, `retry-backoff-bug`에서는 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
 
-다만 좋은 결과만 있었던 것은 아닙니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 발생했습니다. 또한 멀티에이전트는 호출 수가 많아 토큰 사용량이 약 3.3배 증가했습니다.
+그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. `binary-search-bug`에서는 아주 작은 점수 회귀가 있었고, `slugify-bug`에서는 확정 회귀가 나왔습니다. 토큰 사용량도 약 3.3배 늘었습니다. 좋아진 부분은 있었지만, 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
 
-이 실험 뒤에는 `multi:clova` 실행 중 429 rate limit이 발생했습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능뿐 아니라 실제 운영 비용과 API 제한도 같이 봐야 한다는 점을 확인한 사례였습니다.
+실행 중에는 `multi:clova`에서 429 rate limit도 만났습니다. 과제 하나를 풀 때 모델을 여러 번 부르기 때문에 생긴 문제였습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능만 볼 게 아니라 실제 API 제한과 운영 비용도 같이 봐야 한다는 걸 확인한 부분이었습니다.
 
-이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 다만 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 Planner-Coder-Reviewer 구조가 단일 호출보다 안정적인 경향을 보였습니다.
+이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 다만 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 역할을 나눈 구조가 단일 호출보다 안정적인 경우가 있었습니다.
 
 ## 현재 과제
 
