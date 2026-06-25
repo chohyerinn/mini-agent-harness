@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 
 from .agents.base import Agent
 from .models import RunResult, Task
@@ -27,6 +28,7 @@ def run_suite_repeated(
     agent: Agent,
     runs: int = 1,
     artifacts_root: Path | None = None,
+    sleep_between_runs: float = 0.0,
 ) -> dict[str, list[RunResult]]:
     """같은 과제·에이전트 조합을 `runs`번 반복 실행한다.
 
@@ -41,6 +43,8 @@ def run_suite_repeated(
         for i in range(1, runs + 1):
             artifact_dir = (artifacts_root / task.id / f"run-{i}") if artifacts_root else None
             reps.append(run_task(task, agent, run_index=i, artifact_dir=artifact_dir))
+            if sleep_between_runs > 0:
+                time.sleep(sleep_between_runs)
         by_task[task.id] = reps
     return by_task
 

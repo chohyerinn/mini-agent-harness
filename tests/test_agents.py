@@ -1,6 +1,6 @@
 from harness.agents import build_agent
 from harness.agents.clova import ClovaAgent, ClovaChatClient, MultiClovaAgent
-from harness.agents.coding_io import apply_agent_response
+from harness.agents.coding_io import apply_agent_response, apply_agent_response_with_recovery
 
 
 def test_build_multi_agent_default_model():
@@ -82,6 +82,21 @@ def test_apply_agent_response_accepts_single_python_fence_for_single_file(tmp_pa
 
     assert changed == 1
     assert (tmp_path / "m.py").read_text(encoding="utf-8") == "def f():\n    return 42\n"
+
+
+def test_apply_agent_response_reports_fenced_code_recovery(tmp_path):
+    (tmp_path / "m.py").write_text("def f():\n    return 0\n", encoding="utf-8")
+
+    result = apply_agent_response_with_recovery(
+        tmp_path,
+        "```python\ndef f():\n    return 42\n```",
+    )
+
+    assert result.files_written == 1
+    assert result.recovery == {
+        "used_fenced_code_fallback": True,
+        "reason": "single_file_python_fence",
+    }
 
 
 def test_apply_agent_response_does_not_guess_when_multiple_files(tmp_path):

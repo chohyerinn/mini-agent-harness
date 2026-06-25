@@ -27,7 +27,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .coding_io import apply_agent_response, apply_file_blocks, files_blob
+from .coding_io import apply_agent_response_with_recovery, files_blob
 
 DEFAULT_MODEL = "HCX-005"
 DEFAULT_BASE_URL = "https://clovastudio.stream.ntruss.com/v1/openai"
@@ -350,8 +350,9 @@ class ClovaAgent:
             ),
             "response_chars": len(text),
         }]
-        written = apply_agent_response(workdir, text)
-        self.last_trace[-1]["files_written"] = written
+        applied = apply_agent_response_with_recovery(workdir, text)
+        self.last_trace[-1]["files_written"] = applied.files_written
+        self.last_trace[-1]["response_recovery"] = applied.recovery
 
 
 class MultiClovaAgent:
@@ -407,9 +408,10 @@ class MultiClovaAgent:
 
         coder_user = _coder_user_prompt(prompt, plan, files)
         coder_text = self._call("coder", CODER_SYSTEM, coder_user)
-        coder_files = apply_agent_response(workdir, coder_text)
+        coder_applied = apply_agent_response_with_recovery(workdir, coder_text)
         if self.last_trace:
-            self.last_trace[-1]["files_written"] = coder_files
+            self.last_trace[-1]["files_written"] = coder_applied.files_written
+            self.last_trace[-1]["response_recovery"] = coder_applied.recovery
 
         reviewer_files = files_blob(workdir)
         reviewer_user = (
@@ -417,9 +419,10 @@ class MultiClovaAgent:
             f"# Current files after coder patch\n{reviewer_files}"
         )
         reviewer_text = self._call("reviewer", REVIEWER_SYSTEM, reviewer_user)
-        reviewer_writes = apply_agent_response(workdir, reviewer_text)
+        reviewer_applied = apply_agent_response_with_recovery(workdir, reviewer_text)
         if self.last_trace:
-            self.last_trace[-1]["files_written"] = reviewer_writes
+            self.last_trace[-1]["files_written"] = reviewer_applied.files_written
+            self.last_trace[-1]["response_recovery"] = reviewer_applied.recovery
             self.last_trace[-1]["review_passed"] = (
-                reviewer_writes == 0 and "<review>pass</review>" in reviewer_text
+                reviewer_applied.files_written == 0 and "<review>pass</review>" in reviewer_text
             )

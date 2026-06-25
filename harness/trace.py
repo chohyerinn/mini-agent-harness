@@ -77,15 +77,24 @@ def classify_failure(result: RunResult) -> str:
     if result.tamper_detected:
         return "tamper"
     if result.error:
+        if "HTTP 429" in result.error or "rate exceeded" in result.error:
+            return "api_rate_limited"
         return "agent_error"
     if result.files_changed == 0:
         return "planning_error"
+    if result.agent.startswith("multi:"):
+        step_names = [str(step.get("step", "")).lower() for step in result.agent_trace]
+        has_coder = any(step.startswith("coder") for step in step_names)
+        has_reviewer = any(step.startswith("review") for step in step_names)
+        reviewer_passed = any(bool(step.get("review_passed")) for step in result.agent_trace)
+        if has_reviewer and reviewer_passed and result.passed < result.total:
+            return "reviewer_missed_edge_case"
+        if has_reviewer and result.passed > 0:
+            return "reviewer_missed_partial_bug"
+        if has_coder and result.passed == 0:
+            return "coder_wrong_patch"
     if result.passed > 0:
         return "partial_implementation"
-    if result.agent.startswith("multi:") and any(
-        str(step.get("step", "")).lower().startswith("review") for step in result.agent_trace
-    ):
-        return "reviewer_miss"
     return "implementation_error"
 
 
@@ -124,3 +133,34 @@ def aggregate_trace(results: list[RunResult]) -> dict[str, Any]:
 
 def failure_counts(results: list[RunResult]) -> dict[str, int]:
     return dict(Counter(r.failure_type or classify_failure(r) for r in results))
+
+
+def efficiency_summary(results: list[RunResult]) -> dict[str, int | float]:
+    runs = len(results)
+    solved = sum(1 for r in results if r.solved)
+    total_tokens = sum(int(r.token_usage.get("total_tokens", 0)) for r in results)
+    agent_seconds = round(sum(float(r.stage_durations_s.get("agent_run", r.duration_s)) for r in results), 3)
+    return {
+        "runs": runs,
+        "solved": solved,
+        "solve_rate": round(solved / runs, 4) if runs else 0.0,
+        "total_tokens": total_tokens,
+        "agent_seconds": agent_seconds,
+        "tokens_per_solved": round(total_tokens / solved, 2) if solved else 0.0,
+        "seconds_per_solved": round(agent_seconds / solved, 3) if solved else 0.0,
+    }
+
+
+def response_recovery_counts(results: list[RunResult]) -> dict[str, int]:
+    counts = Counter()
+    for result in results:
+        for step in result.agent_trace:
+            recovery = step.get("response_recovery")
+            if not isinstance(recovery, dict):
+                continue
+            if recovery.get("used_fenced_code_fallback") is True:
+                counts["fenced_code_fallback"] += 1
+            reason = recovery.get("reason")
+            if isinstance(reason, str):
+                counts[f"reason:{reason}"] += 1
+    return dict(counts)

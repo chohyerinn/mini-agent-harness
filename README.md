@@ -29,7 +29,9 @@ tasks/<task-id>/
 - bootstrap 95% CI 기반 A/B 비교
 - 실행 시간
 - token usage
+- tokens/sec per solved run
 - 실패 유형: planning error, implementation error, reviewer miss 등
+- 응답 복구 여부: `<file>` 형식 대신 단일 Python 코드블록이 온 경우 안전하게 복구했는지 기록
 
 ## 로컬에서 감 잡기
 
@@ -88,6 +90,12 @@ $env:CLOVA_RETRY_BASE_DELAY = "2"
 
 `multi:clova`는 과제당 Planner/Coder/Reviewer 호출을 나눠 보내므로 단일 `clova`보다 API 호출 수가 많습니다. 429 rate limit이 나오면 기본적으로 잠깐 기다렸다가 재시도합니다.
 
+연속 호출이 부담될 때는 실행 사이에 쉬는 시간을 둘 수 있습니다.
+
+```powershell
+python -m harness.cli ab --a clova --b multi:clova --runs 3 --sleep-between-runs 2
+```
+
 비용 추정은 프로젝트 안에 고정 가격표를 넣지 않았습니다. 과금 기준은 모델과 계정 설정에 따라 달라질 수 있어서, 기본값은 `0`으로 기록합니다. 직접 추정하고 싶으면 아래처럼 100만 토큰당 가격을 넣으면 됩니다.
 
 ```powershell
@@ -131,6 +139,8 @@ python -m harness.cli run --agent multi:clova --runs 5
 다만 좋은 결과만 있었던 것은 아닙니다. `binary-search-bug`, `pagination-bug`처럼 단일 에이전트도 거의 만점에 가까웠던 쉬운 과제에서는 멀티에이전트가 아주 작은 점수 회귀를 보였습니다. 또한 멀티에이전트는 호출 수가 많아 토큰 사용량이 약 3.3배 증가했습니다.
 
 이 실험 뒤에는 `multi:clova` 실행 중 429 rate limit이 발생했습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능뿐 아니라 실제 운영 비용과 API 제한도 같이 봐야 한다는 점을 확인한 사례였습니다.
+
+이 결과만으로 멀티에이전트가 항상 우수하다고 말할 수는 없습니다. 다만 반환 타입, 재귀 처리, 도메인 경계처럼 edge case가 있는 과제에서는 Planner-Coder-Reviewer 구조가 단일 호출보다 안정적인 경향을 보였습니다.
 
 ## 현재 과제
 

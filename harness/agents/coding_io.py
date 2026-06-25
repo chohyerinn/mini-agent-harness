@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from pathlib import Path
 
 FILE_BLOCK = re.compile(r'<file path="(?P<path>[^"]+)">\n?(?P<body>.*?)</file>', re.DOTALL)
 PYTHON_FENCE = re.compile(r"```(?:python|py)?\s*\n(?P<body>.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    files_written: int
+    recovery: dict[str, bool | str]
 
 
 def read_sources(workdir: Path) -> dict[str, str]:
@@ -44,6 +51,10 @@ def apply_file_blocks(workdir: Path, text: str) -> int:
 
 
 def apply_agent_response(workdir: Path, text: str) -> int:
+    return apply_agent_response_with_recovery(workdir, text).files_written
+
+
+def apply_agent_response_with_recovery(workdir: Path, text: str) -> ApplyResult:
     """Apply an agent response to the workspace.
 
     The preferred contract is explicit ``<file path="...">`` blocks.  Some
@@ -54,17 +65,32 @@ def apply_agent_response(workdir: Path, text: str) -> int:
     """
     changed = apply_file_blocks(workdir, text)
     if changed:
-        return changed
+        return ApplyResult(changed, {
+            "used_fenced_code_fallback": False,
+            "reason": "explicit_file_blocks",
+        })
 
     matches = PYTHON_FENCE.findall(text)
     sources = read_sources(workdir)
     if len(matches) != 1 or len(sources) != 1:
-        return 0
+        reason = "ambiguous_or_missing_fenced_code"
+        if len(matches) == 1 and len(sources) != 1:
+            reason = "ambiguous_target_file"
+        return ApplyResult(0, {
+            "used_fenced_code_fallback": False,
+            "reason": reason,
+        })
 
     rel_path = next(iter(sources))
     body = matches[0].strip()
     if not body:
-        return 0
+        return ApplyResult(0, {
+            "used_fenced_code_fallback": False,
+            "reason": "empty_fenced_code",
+        })
     dst = workdir / rel_path
     dst.write_text(body + "\n", encoding="utf-8")
-    return 1
+    return ApplyResult(1, {
+        "used_fenced_code_fallback": True,
+        "reason": "single_file_python_fence",
+    })
