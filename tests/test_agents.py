@@ -1,5 +1,6 @@
 from harness.agents import build_agent
 from harness.agents.clova import ClovaAgent, ClovaChatClient, MultiClovaAgent
+from harness.agents.coding_io import apply_agent_response
 
 
 def test_build_multi_agent_default_model():
@@ -69,6 +70,28 @@ def test_clova_agent_applies_file_blocks(tmp_path):
     assert (tmp_path / "m.py").read_text(encoding="utf-8") == "def f():\n    return 42\n"
     assert agent.last_trace[0]["step"] == "clova.edit"
     assert agent.last_trace[0]["files_written"] == 1
+
+
+def test_apply_agent_response_accepts_single_python_fence_for_single_file(tmp_path):
+    (tmp_path / "m.py").write_text("def f():\n    return 0\n", encoding="utf-8")
+
+    changed = apply_agent_response(
+        tmp_path,
+        "```python\ndef f():\n    return 42\n```",
+    )
+
+    assert changed == 1
+    assert (tmp_path / "m.py").read_text(encoding="utf-8") == "def f():\n    return 42\n"
+
+
+def test_apply_agent_response_does_not_guess_when_multiple_files(tmp_path):
+    (tmp_path / "a.py").write_text("A = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("B = 1\n", encoding="utf-8")
+
+    changed = apply_agent_response(tmp_path, "```python\nA = 2\n```")
+
+    assert changed == 0
+    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "A = 1\n"
 
 
 def test_multi_clova_agent_records_planner_coder_reviewer(tmp_path):

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 FILE_BLOCK = re.compile(r'<file path="(?P<path>[^"]+)">\n?(?P<body>.*?)</file>', re.DOTALL)
+PYTHON_FENCE = re.compile(r"```(?:python|py)?\s*\n(?P<body>.*?)```", re.DOTALL | re.IGNORECASE)
 
 
 def read_sources(workdir: Path) -> dict[str, str]:
@@ -40,3 +41,30 @@ def apply_file_blocks(workdir: Path, text: str) -> int:
         dst.write_text(match.group("body"), encoding="utf-8")
         changed += 1
     return changed
+
+
+def apply_agent_response(workdir: Path, text: str) -> int:
+    """Apply an agent response to the workspace.
+
+    The preferred contract is explicit ``<file path="...">`` blocks.  Some
+    models still return a single fenced Python block even after being told not
+    to.  If the task workspace has exactly one editable source file, that
+    fallback is safe and useful: the target path is unambiguous and we can avoid
+    counting a correct patch as a formatting-only failure.
+    """
+    changed = apply_file_blocks(workdir, text)
+    if changed:
+        return changed
+
+    matches = PYTHON_FENCE.findall(text)
+    sources = read_sources(workdir)
+    if len(matches) != 1 or len(sources) != 1:
+        return 0
+
+    rel_path = next(iter(sources))
+    body = matches[0].strip()
+    if not body:
+        return 0
+    dst = workdir / rel_path
+    dst.write_text(body + "\n", encoding="utf-8")
+    return 1
