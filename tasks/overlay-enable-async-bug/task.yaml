@@ -1,0 +1,8 @@
+id: overlay-enable-async-bug
+title: Environment.overlay가 enable_async 기본값으로 기존 async 설정을 덮어씀
+category: bugfix
+difficulty: easy
+source: pr
+source_ref: https://github.com/pallets/jinja/pull/2061
+source_commit: e45bc745a76b7aa573e68888bf49ecef70001815
+license: BSD-3-Clause

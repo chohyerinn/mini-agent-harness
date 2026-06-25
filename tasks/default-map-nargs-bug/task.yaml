@@ -1,0 +1,8 @@
+id: default-map-nargs-bug
+title: default_map의 문자열 값이 다중 값 옵션에서 split되지 않음
+category: bugfix
+difficulty: medium
+source: pr
+source_ref: https://github.com/pallets/click/pull/3364
+source_commit: a014796098fe79d61f8a78bc9dfd888adfd19c01
+license: BSD-3-Clause

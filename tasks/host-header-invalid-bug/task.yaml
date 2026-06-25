@@ -1,0 +1,8 @@
+id: host-header-invalid-bug
+title: Host header 누락 또는 invalid 문자 처리 완화
+category: bugfix
+difficulty: medium
+source: pr
+source_ref: https://github.com/pallets/werkzeug/pull/3148
+source_commit: deab88f61fa57d37d19f83ea438d4bdebb5a743c
+license: BSD-3-Clause

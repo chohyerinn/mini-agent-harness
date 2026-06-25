@@ -1,0 +1,8 @@
+id: usage-empty-args-bug
+title: 빈 args 사용법 출력에서 prefix와 program name이 사라짐
+category: bugfix
+difficulty: medium
+source: pr
+source_ref: https://github.com/pallets/click/pull/3434
+source_commit: 0551bf53588ae87f462d336f24f853a156fefe3a
+license: BSD-3-Clause

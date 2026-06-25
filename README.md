@@ -131,9 +131,9 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 처음에는 Planner-Coder-Reviewer처럼 역할을 나누면 당연히 더 좋아질 것 같았습니다. 그런데 실제로는 호출 횟수도 늘고, 쉬운 문제에서는 오히려 불필요한 수정이 생길 수 있어서 한 번 숫자로 확인해 보고 싶었습니다.
 
-2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 11개 과제를 각각 3번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
+2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 당시 들어 있던 11개 과제를 각각 3번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
 
-표본은 아직 작습니다. 11개 과제에 대해 3회씩만 반복했기 때문에, 아래 숫자는 일반적인 성능 결론이라기보다 이 작은 과제 집합에서 관찰한 경향으로 보는 것이 맞습니다.
+표본은 아직 작습니다. 11개 과제에 대해 3회씩만 반복한 결과이기 때문에, 아래 숫자는 일반적인 성능 결론이라기보다 이 작은 과제 집합에서 관찰한 경향으로 보는 것이 맞습니다.
 
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
@@ -152,14 +152,18 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 ## 현재 과제
 
-현재 11개 과제가 들어 있습니다. 9개는 재현 가능한 synthetic bug이고, 2개는 실제 오픈소스 PR의 수정 내용을 작은 함수 단위로 줄여 만든 과제입니다.
+현재 15개 과제가 들어 있습니다. 9개는 재현 가능한 synthetic bug이고, 6개는 실제 오픈소스 PR의 수정 내용을 작은 함수 단위로 줄여 만든 과제입니다.
 
 이 프로젝트는 [SWE-bench](https://github.com/swe-bench/SWE-bench)처럼 실제 GitHub issue와 큰 코드베이스를 대상으로 하는 표준 벤치마크를 대체하려는 것은 아닙니다. 여기서는 작은 과제를 이용해 에이전트 반복 실행, 테스트 격리, A/B 비교, 실패 유형 기록 같은 평가 흐름을 직접 구현해 보는 데 초점을 두었습니다.
 
 | Task | Origin | Provenance |
 | --- | --- | --- |
+| `default-map-nargs-bug` | `default_map` 문자열 값이 다중 값 옵션에서 split되지 않음 | [pallets/click#3364](https://github.com/pallets/click/pull/3364), commit `a014796`, BSD-3-Clause |
 | `deprecated-label-bug` | deprecated label 공백 처리 버그 | [pallets/click#3509](https://github.com/pallets/click/pull/3509), commit `82f377c`, BSD-3-Clause |
+| `host-header-invalid-bug` | Host header 누락/invalid 문자 처리 완화 | [pallets/werkzeug#3148](https://github.com/pallets/werkzeug/pull/3148), commit `deab88f`, BSD-3-Clause |
 | `no-proxy-boundary-bug` | `no_proxy` 도메인 경계 매칭 버그 | [psf/requests#7427](https://github.com/psf/requests/pull/7427), commit `52220f6`, Apache-2.0 |
+| `overlay-enable-async-bug` | overlay 환경이 기존 async 설정을 덮어씀 | [pallets/jinja#2061](https://github.com/pallets/jinja/pull/2061), commit `e45bc74`, BSD-3-Clause |
+| `usage-empty-args-bug` | 빈 args 사용법 출력에서 prefix와 program name이 사라짐 | [pallets/click#3434](https://github.com/pallets/click/pull/3434), commit `0551bf5`, BSD-3-Clause |
 
 ## 파일 구조
 
