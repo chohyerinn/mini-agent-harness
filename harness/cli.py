@@ -12,7 +12,7 @@ import datetime as dt
 from pathlib import Path
 
 from .agents import build_agent
-from .benchmark import compare_repeated, run_suite_repeated, summarize_repeated
+from .benchmark import compare_repeated, compare_suite, run_suite_repeated, summarize_repeated
 from .report import write_ab_repeated_markdown, write_repeated_markdown
 from .trace import efficiency_summary
 
@@ -31,6 +31,12 @@ def _safe(name: str) -> str:
 
 def _all_results(by_task):
     return [r for reps in by_task.values() for r in reps]
+
+
+def _format_p_value(p: float) -> str:
+    if p < 0.0001:
+        return "<0.0001"
+    return f"{p:.4f}".rstrip("0").rstrip(".")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -101,6 +107,19 @@ def cmd_ab(args: argparse.Namespace) -> None:
         f"tokens/solved {eff_a['tokens_per_solved']} → {eff_b['tokens_per_solved']} · "
         f"sec/solved {eff_a['seconds_per_solved']} → {eff_b['seconds_per_solved']}"
     )
+    suite = compare_suite(by_task_a, by_task_b)
+    marginal = suite.marginal_tokens_per_extra_solve
+    marginal_str = (
+        f"{marginal:.0f} tokens/추가성공"
+        if suite.solved_b > suite.solved_a
+        else "B가 더 풀지 못함"
+    )
+    print(
+        f"suite solve rate {suite.solve_rate_a:.0%} → {suite.solve_rate_b:.0%} "
+        f"(diff {suite.diff:+.0%}, 95% CI [{suite.ci_low:+.2f}, {suite.ci_high:+.2f}]) · "
+        f"McNemar p={_format_p_value(suite.mcnemar_p)} · {suite.verdict}"
+    )
+    print(f"한계비용: {marginal_str}")
     if args.runs < 2:
         print("주의: --runs가 2 미만이라 모든 과제가 'insufficient_data'로 표시됩니다. --runs 5 이상을 권장합니다.")
     print(f"리포트: {path}")

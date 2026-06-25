@@ -9,7 +9,14 @@ import time
 from .agents.base import Agent
 from .models import RunResult, Task
 from .runner import run_task
-from .stats import bootstrap_mean_diff_ci, mean, pass_at_k, stdev
+from .stats import (
+    bootstrap_mean_diff_ci,
+    mcnemar_test,
+    mean,
+    paired_bootstrap_diff_ci,
+    pass_at_k,
+    stdev,
+)
 
 
 def load_tasks(tasks_dir: Path) -> list[Task]:
@@ -232,3 +239,124 @@ def compare_repeated(
             sa.runs, sb.runs, ci_low, ci_high, verdict,
         ))
     return out
+
+
+def _suite_verdict(n_a: int, n_b: int, diff: float, ci_low: float, ci_high: float) -> str:
+    """suite 전체 solve rate 차이에 대한 판정.
+
+    과제별 `_verdict`와 같은 원칙: 신뢰구간이 0을 걸치면 방향만 후보로 보고,
+    한쪽으로 완전히 떨어져야만 통계적으로 확정된 차이로 본다.
+    """
+    if n_a < _MIN_RUNS_FOR_VERDICT or n_b < _MIN_RUNS_FOR_VERDICT:
+        return "insufficient_data"
+    if ci_low > 0:
+        return "significant_improvement"
+    if ci_high < 0:
+        return "significant_regression"
+    if diff > 0:
+        return "improvement_not_significant"
+    if diff < 0:
+        return "regression_not_significant"
+    return "no_difference"
+
+
+@dataclass
+class SuiteComparison:
+    """두 에이전트 설정의 *suite 전체* 비교.
+
+    과제별(`ABComparison`)과 달리, 헤드라인 숫자인 "전체 solve rate 49% vs 58%"가
+    통계적으로 유의한지 한 번에 판정한다. 같은 과제 집합을 풀므로
+    과제 단위 페어드 부트스트랩 CI와 (과제, run) 짝 McNemar 검정을 함께 본다.
+    비용 쪽은 "추가 1건을 더 풀기 위해 들인 토큰(한계비용)"으로 요약한다.
+    """
+
+    n_tasks: int
+    runs_a: int
+    runs_b: int
+    solve_rate_a: float          # 과제별 solve rate의 평균(macro)
+    solve_rate_b: float
+    ci_low: float                # mean(b)-mean(a) 페어드 부트스트랩 95% CI
+    ci_high: float
+    only_a_solved: int           # McNemar 불일치쌍: A만 성공
+    only_b_solved: int           # McNemar 불일치쌍: B만 성공
+    mcnemar_stat: float
+    mcnemar_p: float
+    solved_a: int                # (과제, run) 단위 성공 수(micro)
+    solved_b: int
+    total_runs: int
+    tokens_a: int
+    tokens_b: int
+    verdict: str
+
+    @property
+    def diff(self) -> float:
+        return round(self.solve_rate_b - self.solve_rate_a, 4)
+
+    @property
+    def marginal_tokens_per_extra_solve(self) -> float:
+        """B가 A보다 1건 더 풀기 위해 추가로 쓴 토큰. B가 더 풀지 못했으면 0.
+
+        '멀티에이전트가 9%p 더 풀지만 토큰은 3배'를 한 숫자로 압축한다.
+        예: 추가 토큰 66,000 / 추가 성공 4건 = 1건당 16,500 토큰.
+        """
+        extra_solved = self.solved_b - self.solved_a
+        if extra_solved <= 0:
+            return 0.0
+        return round((self.tokens_b - self.tokens_a) / extra_solved, 1)
+
+
+def _solved_by_run(reps: list[RunResult]) -> dict[int, bool]:
+    return {r.run_index: r.solved for r in reps}
+
+
+def _total_tokens(results: list[RunResult]) -> int:
+    return sum(int(r.token_usage.get("total_tokens", 0)) for r in results)
+
+
+def compare_suite(
+    by_task_a: dict[str, list[RunResult]], by_task_b: dict[str, list[RunResult]],
+) -> SuiteComparison:
+    """suite 전체 solve rate 차이의 유의성과 비용효율을 한 번에 판정한다."""
+    sa = {s.task_id: s for s in task_stats(by_task_a)}
+    sb = {s.task_id: s for s in task_stats(by_task_b)}
+    shared = sorted(set(sa) & set(sb))
+
+    pairs = [(sa[t].solve_rate, sb[t].solve_rate) for t in shared]
+    ci_low, ci_high = paired_bootstrap_diff_ci(pairs)
+
+    only_a = only_b = 0
+    for t in shared:
+        ra, rb = _solved_by_run(by_task_a[t]), _solved_by_run(by_task_b[t])
+        for idx in set(ra) & set(rb):  # 같은 run 인덱스끼리 짝지어 비교
+            if ra[idx] and not rb[idx]:
+                only_a += 1
+            elif rb[idx] and not ra[idx]:
+                only_b += 1
+    mc_stat, mc_p = mcnemar_test(only_a, only_b)
+
+    a_results = [r for t in shared for r in by_task_a[t]]
+    b_results = [r for t in shared for r in by_task_b[t]]
+    runs_a = sa[shared[0]].runs if shared else 0
+    runs_b = sb[shared[0]].runs if shared else 0
+    sr_a = round(mean([sa[t].solve_rate for t in shared]), 4) if shared else 0.0
+    sr_b = round(mean([sb[t].solve_rate for t in shared]), 4) if shared else 0.0
+
+    return SuiteComparison(
+        n_tasks=len(shared),
+        runs_a=runs_a,
+        runs_b=runs_b,
+        solve_rate_a=sr_a,
+        solve_rate_b=sr_b,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        only_a_solved=only_a,
+        only_b_solved=only_b,
+        mcnemar_stat=mc_stat,
+        mcnemar_p=mc_p,
+        solved_a=sum(1 for r in a_results if r.solved),
+        solved_b=sum(1 for r in b_results if r.solved),
+        total_runs=len(a_results),
+        tokens_a=_total_tokens(a_results),
+        tokens_b=_total_tokens(b_results),
+        verdict=_suite_verdict(runs_a, runs_b, round(sr_b - sr_a, 4), ci_low, ci_high),
+    )

@@ -75,3 +75,69 @@ def bootstrap_mean_diff_ci(
     lo_idx = max(0, int((alpha / 2) * n_boot))
     hi_idx = min(n_boot - 1, int((1 - alpha / 2) * n_boot))
     return (round(diffs[lo_idx], 2), round(diffs[hi_idx], 2))
+
+
+def paired_bootstrap_diff_ci(
+    pairs: list[tuple[float, float]],
+    n_boot: int = 2000,
+    alpha: float = 0.05,
+    seed: int = 12345,
+) -> tuple[float, float]:
+    """같은 과제 집합에서 두 설정을 비교할 때의 *페어드* 부트스트랩 CI.
+
+    `bootstrap_mean_diff_ci`는 a, b를 각각 독립으로 리샘플링한다(한 과제
+    안에서 두 설정이 서로 다른 무작위 실행이라 적절). 하지만 suite 전체의
+    solve rate를 비교할 때는 두 설정이 *같은 과제 집합*을 풀므로, 과제 단위로
+    짝을 유지한 채 리샘플링해야 한다. 어떤 과제가 둘 다에게 쉽거나 어렵다는
+    상관(난이도 공변)을 무시하면 분산을 과대평가해 실제 차이를 못 잡는다.
+
+    pairs = [(a_i, b_i), ...]  과제 i에서의 두 설정 지표(예: 과제별 solve rate).
+    같은 인덱스 묶음으로 복원추출해 mean(b)-mean(a)의 분포를 만들고,
+    그 (1-alpha) percentile 구간을 돌려준다. 시드 고정으로 재현 가능.
+    과제가 2개 미만이면 분산을 추정할 수 없어 점추정값을 그대로 돌려준다.
+    """
+    n = len(pairs)
+    if n < 2:
+        d = round(pairs[0][1] - pairs[0][0], 4) if n == 1 else 0.0
+        return (d, d)
+    rng = random.Random(seed)
+    diffs = []
+    for _ in range(n_boot):
+        idx = [rng.randrange(n) for _ in range(n)]
+        a_sum = sum(pairs[i][0] for i in idx)
+        b_sum = sum(pairs[i][1] for i in idx)
+        diffs.append((b_sum - a_sum) / n)
+    diffs.sort()
+    lo_idx = max(0, int((alpha / 2) * n_boot))
+    hi_idx = min(n_boot - 1, int((1 - alpha / 2) * n_boot))
+    return (round(diffs[lo_idx], 4), round(diffs[hi_idx], 4))
+
+
+def mcnemar_test(only_a: int, only_b: int) -> tuple[float, float]:
+    """McNemar 검정: 같은 항목을 두 설정이 푼 이진 결과(성공/실패)를 비교한다.
+
+    같은 과제(여기서는 같은 (과제, run) 쌍)를 두 설정이 모두 풀므로, 두 설정의
+    성공률 차이를 볼 때 표준 도구는 독립표본 검정이 아니라 *짝지은* McNemar
+    검정이다. 둘 다 성공/둘 다 실패한 일치쌍은 차이 정보를 주지 않아 버리고,
+    한쪽만 성공한 불일치쌍만 본다.
+
+        only_a: A만 성공(B는 실패)한 쌍의 수
+        only_b: B만 성공(A는 실패)한 쌍의 수
+
+    불일치쌍이 적을 때(<25) 카이제곱 근사는 부정확하므로 정확 이항검정(양측)을
+    쓰고, 충분히 많으면 연속성 보정 카이제곱을 쓴다. chi2(자유도 1)의
+    꼬리확률은 P(chi2_1 > x) = erfc(sqrt(x/2)) 이므로 scipy 없이 계산한다.
+
+    (statistic, p_value)를 돌려준다. 불일치쌍이 0이면 판단 근거가 없어 (0.0, 1.0).
+    """
+    n = only_a + only_b
+    if n == 0:
+        return (0.0, 1.0)
+    statistic = max(0.0, (abs(only_a - only_b) - 1) ** 2 / n)  # 연속성 보정
+    if n < 25:
+        k = min(only_a, only_b)
+        tail = sum(math.comb(n, i) for i in range(k + 1)) * (0.5 ** n)
+        p = min(1.0, 2.0 * tail)
+    else:
+        p = math.erfc(math.sqrt(statistic / 2))
+    return (round(statistic, 4), round(p, 4))
