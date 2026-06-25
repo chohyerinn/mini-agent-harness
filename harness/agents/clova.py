@@ -34,13 +34,19 @@ DEFAULT_MAX_TOKENS = 4096
 SYSTEM = """\
 You are a coding agent fixing a bug in a small Python project.
 Edit only what the task requires. Keep changes minimal.
+Do not add examples, demos, print statements, decorators, CLI code, or unrelated parameters.
 Return the full new content of every file you change, each wrapped as:
 
 <file path="relative/path.py">
 ...complete file content...
 </file>
 
-Output only these <file> blocks. No prose, no markdown fences."""
+Output only these <file> blocks. No prose, no markdown fences.
+
+중요:
+- 설명하지 말고 수정한 파일 전체 내용만 출력하세요.
+- Markdown 코드블록(```python)은 절대 쓰지 마세요.
+- 파일을 고쳤다면 반드시 <file path="..."> 형식으로 감싸세요."""
 
 PLANNER_SYSTEM = """\
 You are the planner in a coding-agent team.
@@ -51,6 +57,7 @@ Do not output code. Do not mention tests you cannot see. Keep the plan specific.
 CODER_SYSTEM = """\
 You are the coder in a coding-agent team.
 Use the task, source files, and planner notes to fix the bug.
+Do not add examples, demos, print statements, decorators, CLI code, or unrelated parameters.
 Return the full new content of every file you change, each wrapped as:
 
 <file path="relative/path.py">
@@ -58,6 +65,11 @@ Return the full new content of every file you change, each wrapped as:
 </file>
 
 Output only these <file> blocks. No prose, no markdown fences.
+
+중요:
+- 설명하지 말고 수정한 파일 전체 내용만 출력하세요.
+- Markdown 코드블록(```python)은 절대 쓰지 마세요.
+- 파일을 고쳤다면 반드시 <file path="..."> 형식으로 감싸세요.
 """
 
 REVIEWER_SYSTEM = """\
@@ -187,6 +199,55 @@ def estimate_clova_cost_usd(input_tokens: int, output_tokens: int) -> float:
     )
 
 
+def _single_user_prompt(prompt: str, current_files: str) -> str:
+    return f"""\
+# Task
+{prompt}
+
+# Current files
+{current_files}
+
+# Required output format
+수정이 필요한 파일의 전체 내용을 아래 형식으로만 출력하세요.
+
+<file path="relative/path.py">
+...complete file content...
+</file>
+
+규칙:
+- 설명 문장, 요약, 마크다운 코드블록을 출력하지 마세요.
+- 테스트 파일은 수정하지 마세요.
+- 필요한 최소 코드만 고치세요.
+- 예제 실행 코드, print 디버깅, __main__ 블록을 추가하지 마세요.
+"""
+
+
+def _coder_user_prompt(prompt: str, plan: str, current_files: str) -> str:
+    return f"""\
+# Task
+{prompt}
+
+# Planner notes
+{plan}
+
+# Current files
+{current_files}
+
+# Required output format
+수정이 필요한 파일의 전체 내용을 아래 형식으로만 출력하세요.
+
+<file path="relative/path.py">
+...complete file content...
+</file>
+
+규칙:
+- 설명 문장, 요약, 마크다운 코드블록을 출력하지 마세요.
+- 테스트 파일은 수정하지 마세요.
+- 필요한 최소 코드만 고치세요.
+- 예제 실행 코드, print 디버깅, __main__ 블록을 추가하지 마세요.
+"""
+
+
 class ClovaChatClient:
     def __init__(
         self,
@@ -257,7 +318,7 @@ class ClovaAgent:
         return self.client
 
     def run(self, workdir: Path, prompt: str) -> None:
-        user = f"# Task\n{prompt}\n\n# Current files\n{files_blob(workdir)}"
+        user = _single_user_prompt(prompt, files_blob(workdir))
         start = time.perf_counter()
         text, usage = self._client().complete(SYSTEM, user)
         duration = round(time.perf_counter() - start, 3)
@@ -328,7 +389,7 @@ class MultiClovaAgent:
         planner_user = f"# Task\n{prompt}\n\n# Current files\n{files}"
         plan = self._call("planner", PLANNER_SYSTEM, planner_user)
 
-        coder_user = f"# Task\n{prompt}\n\n# Planner notes\n{plan}\n\n# Current files\n{files}"
+        coder_user = _coder_user_prompt(prompt, plan, files)
         coder_text = self._call("coder", CODER_SYSTEM, coder_user)
         coder_files = apply_file_blocks(workdir, coder_text)
         if self.last_trace:

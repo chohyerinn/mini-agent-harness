@@ -106,7 +106,7 @@ def test_artifacts_include_environment_metadata(tmp_path):
     task = _make_task(tmp_path)
     art = tmp_path / "art"
     run_task(task, MockAgent("solve"), artifact_dir=art)
-    for name in ("prompt.md", "diff.patch", "pytest.log", "error.log", "meta.json"):
+    for name in ("prompt.md", "agent_response.txt", "diff.patch", "pytest.log", "error.log", "meta.json"):
         assert (art / name).exists(), name
     meta = json.loads((art / "meta.json").read_text(encoding="utf-8"))
     assert meta["solved"] is True
@@ -130,6 +130,7 @@ def test_artifacts_include_agent_trace_and_cost(tmp_path):
         fingerprint = {"kind": "test"}
 
         def run(self, workdir, prompt):
+            self.last_response_text = '<file path="m.py">...</file>'
             self.last_trace = [{
                 "step": "planner",
                 "duration_s": 0.12,
@@ -148,3 +149,4 @@ def test_artifacts_include_agent_trace_and_cost(tmp_path):
     assert meta["token_usage"]["output_tokens"] == 5
     assert meta["estimated_cost_usd"] == 0.001
     assert meta["agent_fingerprint"] == {"kind": "test"}
+    assert (art / "agent_response.txt").read_text(encoding="utf-8") == '<file path="m.py">...</file>'

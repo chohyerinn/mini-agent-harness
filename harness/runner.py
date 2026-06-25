@@ -95,6 +95,7 @@ def run_task(
         # 주의: 여기서는 tests/를 work에 넣지 않는다 — 에이전트가 아직 못 보게.
 
         error = ""
+        agent_response_text = ""
         stage_durations: dict[str, float] = {}
         total_start = time.perf_counter()
         start = time.perf_counter()
@@ -102,6 +103,13 @@ def run_task(
             agent.run(work, task.prompt)
         except Exception as exc:  # 에이전트 자체 오류도 결과로 기록
             error = f"{type(exc).__name__}: {exc}"
+        response_text = getattr(agent, "last_response_text", "")
+        if isinstance(response_text, str) and response_text:
+            agent_response_text = response_text
+        else:
+            responses = getattr(agent, "last_responses", "")
+            if isinstance(responses, dict):
+                agent_response_text = json.dumps(responses, ensure_ascii=False, indent=2)
         duration = round(time.perf_counter() - start, 3)
         stage_durations["agent_run"] = duration
         agent_trace = normalize_trace(getattr(agent, "last_trace", []))
@@ -152,7 +160,7 @@ def run_task(
         result.failure_type = classify_failure(result)
 
         if artifact_dir is not None:
-            _save_artifacts(artifact_dir, task, result, diff.text, pytest_log)
+            _save_artifacts(artifact_dir, task, result, diff.text, pytest_log, agent_response_text)
 
         return result
     finally:
@@ -160,10 +168,16 @@ def run_task(
 
 
 def _save_artifacts(
-    artifact_dir: Path, task: Task, result: RunResult, diff_text: str, pytest_log: str,
+    artifact_dir: Path,
+    task: Task,
+    result: RunResult,
+    diff_text: str,
+    pytest_log: str,
+    agent_response_text: str = "",
 ) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "prompt.md").write_text(task.prompt, encoding="utf-8")
+    (artifact_dir / "agent_response.txt").write_text(agent_response_text, encoding="utf-8")
     (artifact_dir / "diff.patch").write_text(diff_text, encoding="utf-8")
     (artifact_dir / "pytest.log").write_text(pytest_log, encoding="utf-8")
     error_log = result.error
