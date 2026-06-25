@@ -82,7 +82,11 @@ https://clovastudio.stream.ntruss.com/v1/openai
 $env:CLOVA_BASE_URL = "https://clovastudio.stream.ntruss.com/v1/openai"
 $env:CLOVA_MAX_TOKENS = "4096"
 $env:CLOVA_TEMPERATURE = "0"
+$env:CLOVA_MAX_RETRIES = "3"
+$env:CLOVA_RETRY_BASE_DELAY = "2"
 ```
+
+`multi:clova`는 과제당 Planner/Coder/Reviewer 호출을 나눠 보내므로 단일 `clova`보다 API 호출 수가 많습니다. 429 rate limit이 나오면 기본적으로 잠깐 기다렸다가 재시도합니다.
 
 비용 추정은 프로젝트 안에 고정 가격표를 넣지 않았습니다. 과금 기준은 모델과 계정 설정에 따라 달라질 수 있어서, 기본값은 `0`으로 기록합니다. 직접 추정하고 싶으면 아래처럼 100만 토큰당 가격을 넣으면 됩니다.
 

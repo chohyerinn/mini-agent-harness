@@ -12,6 +12,8 @@ Optional:
   - CLOVA_MAX_TOKENS, default 4096
   - CLOVA_TEMPERATURE, default 0
   - CLOVA_TIMEOUT, default 120
+  - CLOVA_MAX_RETRIES, default 3
+  - CLOVA_RETRY_BASE_DELAY, default 2.0
   - CLOVA_INPUT_PRICE_PER_MTOK / CLOVA_OUTPUT_PRICE_PER_MTOK for local cost estimates
 """
 
@@ -112,13 +114,27 @@ def _default_post_json(
     timeout: int,
 ) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"CLOVA Studio API failed: HTTP {exc.code} {detail}") from exc
+    max_retries = _env_int("CLOVA_MAX_RETRIES", 3)
+    base_delay = _env_float("CLOVA_RETRY_BASE_DELAY", 2.0)
+
+    for attempt in range(max_retries + 1):
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 429 and attempt < max_retries:
+                retry_after = exc.headers.get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after else base_delay * (2 ** attempt)
+                except ValueError:
+                    delay = base_delay * (2 ** attempt)
+                time.sleep(min(delay, 30.0))
+                continue
+            raise RuntimeError(f"CLOVA Studio API failed: HTTP {exc.code} {detail}") from exc
+
+    raise RuntimeError("CLOVA Studio API failed after retries")
 
 
 def _content_to_text(content: Any) -> str:
