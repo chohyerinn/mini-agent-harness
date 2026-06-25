@@ -11,6 +11,7 @@ def build_agent(spec: str) -> Agent:
     - 'mock:flaky'      (성공 확률 0.5)
     - 'mock:flaky:0.3'  (성공 확률 0.3)
     - 'claude' / 'claude:<model>' — 실제 Claude 에이전트 (기본 claude-opus-4-8,
+    - 'multi' / 'multi:<model>' — Planner/Coder/Reviewer Claude 멀티에이전트,
       ANTHROPIC_API_KEY 필요)
 
     다른 LLM도 Agent 프로토콜만 구현해 여기에 분기를 추가하면 된다.
@@ -21,6 +22,14 @@ def build_agent(spec: str) -> Agent:
         from .claude import ClaudeAgent
 
         return ClaudeAgent(model=rest or "claude-opus-4-8")
+
+    if kind == "multi":
+        from .multi import MultiClaudeAgent
+
+        model = rest or "claude-opus-4-8"
+        if model.startswith("claude:"):
+            model = model.split(":", 1)[1]
+        return MultiClaudeAgent(model=model)
 
     if kind != "mock":
         raise ValueError(f"알 수 없는 에이전트: {spec!r}")

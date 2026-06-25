@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .benchmark import ABComparison, compare_repeated, summarize_repeated
 from .models import RunResult
+from .trace import aggregate_trace, failure_counts
 
 
 def _pct(x: float) -> str:
@@ -26,6 +27,44 @@ def _task_rows(tasks: list[dict], k_values: list[int]) -> str:
     return "\n".join(out)
 
 
+def _all_results(by_task: dict[str, list[RunResult]]) -> list[RunResult]:
+    return [r for reps in by_task.values() for r in reps]
+
+
+def _trace_markdown(results: list[RunResult]) -> str:
+    trace = aggregate_trace(results)
+    usage = trace["token_usage"]
+    rows = "\n".join(
+        f"| {s['step']} | {s['runs']} | {s['duration_s']} | {s['avg_duration_s']} | "
+        f"${s['estimated_cost_usd']:.6f} |"
+        for s in trace["steps"]
+    ) or "| - | 0 | 0 | 0 | $0.000000 |"
+    return f"""## Trace / cost
+
+| Metric | Value |
+|---|---|
+| input tokens | {usage['input_tokens']} |
+| output tokens | {usage['output_tokens']} |
+| total tokens | {usage['total_tokens']} |
+| estimated cost | ${trace['estimated_cost_usd']:.6f} |
+
+| Step | runs | total sec | avg sec | estimated cost |
+|---|---:|---:|---:|---:|
+{rows}
+"""
+
+
+def _failure_markdown(results: list[RunResult]) -> str:
+    counts = failure_counts(results)
+    rows = "\n".join(f"| {k} | {v} |" for k, v in sorted(counts.items())) or "| - | 0 |"
+    return f"""## Failure types
+
+| Type | runs |
+|---|---:|
+{rows}
+"""
+
+
 def write_repeated_markdown(
     by_task: dict[str, list[RunResult]],
     out_dir: Path,
@@ -37,6 +76,7 @@ def write_repeated_markdown(
     ks = summary["k_values"]
     o = summary["overall"]
     today = dt.date.today().isoformat()
+    results = _all_results(by_task)
 
     pass_header = " | ".join(f"pass@{k}" for k in ks)
     pass_overall_rows = "\n".join(f"| pass@{k} (평균) | {_pct(o[f'pass@{k}'])} |" for k in ks)
@@ -66,6 +106,10 @@ pass@k는 "과제당 k번을 시도하면 적어도 한 번은 성공할 확률"
 | Task | 실행 | 해결 | solve rate | 평균 점수 | 표준편차 | 최소 | 최대 | {pass_header} |
 |---|---|---|---|---|---|---|---|{'---|' * len(ks)}
 {_task_rows(summary['tasks'], ks)}
+
+{_trace_markdown(results)}
+
+{_failure_markdown(results)}
 """
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_agent = agent.replace(":", "_")
@@ -76,6 +120,8 @@ pass@k는 "과제당 k번을 시도하면 적어도 한 번은 성공할 확률"
             {
                 "agent": agent,
                 "summary": summary,
+                "trace": aggregate_trace(results),
+                "failure_types": failure_counts(results),
                 "runs": {
                     task_id: [r.to_dict() for r in reps] for task_id, reps in by_task.items()
                 },
@@ -113,6 +159,8 @@ def write_ab_repeated_markdown(
     """
     comps = compare_repeated(by_task_a, by_task_b)
     today = dt.date.today().isoformat()
+    results_a = _all_results(by_task_a)
+    results_b = _all_results(by_task_b)
     confirmed_regressions = [c for c in comps if c.verdict == "regression"]
     candidate_regressions = [c for c in comps if c.verdict == "regression_candidate"]
     insufficient = [c for c in comps if c.verdict == "insufficient_data"]
@@ -146,6 +194,18 @@ CI는 `mean(B) - mean(A)`에 대한 95% 부트스트랩 신뢰구간이다. 신�
 | Task | A 평균±표준편차 | B 평균±표준편차 | Δ | 95% CI(B-A) | 판정 |
 |---|---|---|---|---|---|
 {rows}
+
+## A trace / cost
+
+{_trace_markdown(results_a)}
+
+{_failure_markdown(results_a)}
+
+## B trace / cost
+
+{_trace_markdown(results_b)}
+
+{_failure_markdown(results_b)}
 """
     if confirmed_regressions:
         md += "\n## 🔻 확정된 회귀\n" + "\n".join(

@@ -54,6 +54,11 @@ class RunResult:
     artifact_dir: str = ""
     prompt_hash: str = ""
     agent_fingerprint: dict[str, Any] = field(default_factory=dict)
+    agent_trace: list[dict[str, Any]] = field(default_factory=list)
+    token_usage: dict[str, int] = field(default_factory=dict)
+    estimated_cost_usd: float = 0.0
+    stage_durations_s: dict[str, float] = field(default_factory=dict)
+    failure_type: str = ""
     tamper_detected: bool = False
     tamper_reason: str = ""
 

@@ -40,6 +40,9 @@ python -m harness.cli ab --a mock:solve --b mock:flaky:0.5 --runs 5
 ```powershell
 $env:ANTHROPIC_API_KEY = "..."
 python -m harness.cli run --agent claude --runs 5
+
+# Planner/Coder/Reviewer 멀티에이전트와 단일 Claude 비교
+python -m harness.cli ab --a claude --b multi:claude-opus-4-8 --runs 5
 ```
 
 결과는 `reports/`에 저장됩니다. 실행별 폴더에는 `prompt.md`, `diff.patch`, `pytest.log`, `error.log`, `meta.json`이 들어 있습니다.
@@ -105,3 +108,15 @@ pytest tests -q
 ```
 
 GitHub Actions는 harness 단위 테스트, `mock:solve` 스모크 테스트, 반복 A/B 실행을 확인합니다. 실제 LLM 호출은 비용과 비결정성 때문에 CI에서 실행하지 않습니다.
+
+## trace와 실패 유형
+
+각 실행의 `meta.json`에는 점수뿐 아니라 측정 근거도 함께 남습니다.
+
+- `agent_trace`: 단일 호출 또는 Planner/Coder/Reviewer 단계별 시간, 토큰 수, 예상 비용
+- `token_usage`: 전체 input/output/total token 합계
+- `estimated_cost_usd`: 모델 가격표 기반 추정 비용
+- `stage_durations_s`: agent 실행, tamper scan, pytest, diff 등 harness 단계별 시간
+- `failure_type`: `planning_error`, `implementation_error`, `reviewer_miss`, `partial_implementation`, `agent_error`, `tamper`, `solved`
+
+이 값들은 A/B 리포트에도 집계됩니다. 그래서 단순히 “멀티에이전트가 더 좋다/나쁘다”가 아니라, 어느 단계에서 시간이 늘었는지, 비용이 얼마나 증가했는지, 실패가 계획·구현·리뷰 중 어디에 가까운지 같이 볼 수 있습니다.

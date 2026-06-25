@@ -16,6 +16,7 @@ from pathlib import Path
 from .agents.base import Agent
 from .models import RunResult, Task
 from .scoring import compute_diff, find_environment_tampering, hash_tree, run_pytest
+from .trace import classify_failure, cost_from_trace, normalize_trace, token_usage_from_trace
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -94,27 +95,44 @@ def run_task(
         # 주의: 여기서는 tests/를 work에 넣지 않는다 — 에이전트가 아직 못 보게.
 
         error = ""
+        stage_durations: dict[str, float] = {}
+        total_start = time.perf_counter()
         start = time.perf_counter()
         try:
             agent.run(work, task.prompt)
         except Exception as exc:  # 에이전트 자체 오류도 결과로 기록
             error = f"{type(exc).__name__}: {exc}"
         duration = round(time.perf_counter() - start, 3)
+        stage_durations["agent_run"] = duration
+        agent_trace = normalize_trace(getattr(agent, "last_trace", []))
+        if not agent_trace:
+            agent_trace = [{"step": "agent.run", "duration_s": duration}]
+        token_usage = token_usage_from_trace(agent_trace)
+        estimated_cost = cost_from_trace(agent_trace)
 
+        start = time.perf_counter()
         tamper_findings = find_environment_tampering(base, work)
+        stage_durations["tamper_scan"] = round(time.perf_counter() - start, 3)
 
         # 채점용 테스트는 지금 처음 넣는다. 에이전트가 미리 같은 이름의
         # 폴더를 만들어 뒀더라도 통째로 지우고 원본에서 새로 복사한다.
+        start = time.perf_counter()
         shutil.rmtree(work / "tests", ignore_errors=True)
         shutil.copytree(task.tests, work / "tests")
         tests_hash_ref = hash_tree(task.tests)
+        stage_durations["prepare_tests"] = round(time.perf_counter() - start, 3)
 
+        start = time.perf_counter()
         passed, total, pytest_log = run_pytest(work)
+        stage_durations["pytest"] = round(time.perf_counter() - start, 3)
 
         if hash_tree(work / "tests") != tests_hash_ref:
             tamper_findings.append("tests/ 내용이 pytest 실행 전후로 달라짐")
 
+        start = time.perf_counter()
         diff = compute_diff(base, work)
+        stage_durations["diff"] = round(time.perf_counter() - start, 3)
+        stage_durations["total"] = round(time.perf_counter() - total_start, 3)
 
         result = RunResult(
             task_id=task.id, agent=agent.name,
@@ -124,9 +142,14 @@ def run_task(
             run_index=run_index, artifact_dir=str(artifact_dir) if artifact_dir else "",
             prompt_hash=hashlib.sha256(task.prompt.encode()).hexdigest()[:12],
             agent_fingerprint=dict(getattr(agent, "fingerprint", {})),
+            agent_trace=agent_trace,
+            token_usage=token_usage,
+            estimated_cost_usd=estimated_cost,
+            stage_durations_s=stage_durations,
             tamper_detected=bool(tamper_findings),
             tamper_reason="; ".join(tamper_findings),
         )
+        result.failure_type = classify_failure(result)
 
         if artifact_dir is not None:
             _save_artifacts(artifact_dir, task, result, diff.text, pytest_log)

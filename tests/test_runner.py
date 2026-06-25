@@ -115,3 +115,36 @@ def test_artifacts_include_environment_metadata(tmp_path):
     assert "harness_commit" in env
     assert "python" in env
     assert "packages" in env
+    assert meta["agent_trace"][0]["step"] == "agent.run"
+    assert "token_usage" in meta
+    assert "estimated_cost_usd" in meta
+    assert "stage_durations_s" in meta
+    assert meta["failure_type"] == "solved"
+
+
+def test_artifacts_include_agent_trace_and_cost(tmp_path):
+    task = _make_task(tmp_path)
+
+    class _TraceAgent:
+        name = "trace-agent"
+        fingerprint = {"kind": "test"}
+
+        def run(self, workdir, prompt):
+            self.last_trace = [{
+                "step": "planner",
+                "duration_s": 0.12,
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "estimated_cost_usd": 0.001,
+            }]
+            (workdir / "m.py").write_text("def f():\n    return 42\n", encoding="utf-8")
+
+    art = tmp_path / "trace-art"
+    run_task(task, _TraceAgent(), artifact_dir=art)
+    meta = json.loads((art / "meta.json").read_text(encoding="utf-8"))
+    assert meta["agent_trace"][0]["step"] == "planner"
+    assert meta["token_usage"]["input_tokens"] == 10
+    assert meta["token_usage"]["output_tokens"] == 5
+    assert meta["estimated_cost_usd"] == 0.001
+    assert meta["agent_fingerprint"] == {"kind": "test"}
