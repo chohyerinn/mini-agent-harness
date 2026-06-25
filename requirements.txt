@@ -1,5 +1,2 @@
 pytest>=8.0
 PyYAML>=6.0
-
-# 실제 Claude 에이전트(harness/agents/claude.py)를 쓸 때만 필요
-anthropic>=0.69
