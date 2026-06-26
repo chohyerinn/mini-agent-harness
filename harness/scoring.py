@@ -54,6 +54,60 @@ def _sandboxed_env(workdir: Path) -> dict[str, str]:
     return env
 
 
+def _pytest_timeout() -> int:
+    return int(os.environ.get("HARNESS_PYTEST_TIMEOUT", "300"))
+
+
+def _pytest_command(report: Path | str) -> list[str]:
+    return [
+        sys.executable, "-m", "pytest", "tests",
+        "--junitxml", str(report), "-q", "-p", "no:cacheprovider",
+    ]
+
+
+def _run_pytest_local(workdir: Path, report: Path) -> str:
+    proc = subprocess.run(
+        _pytest_command(report),
+        cwd=workdir, env=_sandboxed_env(workdir),
+        capture_output=True, text=True,
+        timeout=_pytest_timeout(),
+    )
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
+def _run_pytest_docker(workdir: Path) -> str:
+    """Run pytest inside a Docker container.
+
+    This is optional because not every local environment has Docker.  It is
+    stronger than the default subprocess mode because the test process gets no
+    host environment secrets and no network access; only the task workspace is
+    mounted into the container.
+    """
+    image = os.environ.get("HARNESS_DOCKER_IMAGE", "mini-agent-harness-pytest:latest")
+    cmd = [
+        "docker", "run", "--rm",
+        "--network", "none",
+        "--cpus", os.environ.get("HARNESS_DOCKER_CPUS", "1"),
+        "--memory", os.environ.get("HARNESS_DOCKER_MEMORY", "512m"),
+        "--pids-limit", os.environ.get("HARNESS_DOCKER_PIDS", "128"),
+        "--env", "PYTHONHASHSEED=0",
+        "--env", "PYTHONDONTWRITEBYTECODE=1",
+        "-v", f"{workdir.resolve()}:/work:rw",
+        "-w", "/work",
+        "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m",
+        image,
+        "python", "-m", "pytest", "tests",
+        "--junitxml", "/work/_junit.xml", "-q", "-p", "no:cacheprovider",
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=workdir,
+        capture_output=True, text=True,
+        timeout=_pytest_timeout(),
+    )
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
 def run_pytest(workdir: Path) -> tuple[int, int, str]:
     """workdir에서 pytest를 돌리고 (passed, total, log)를 반환한다.
 
@@ -63,16 +117,15 @@ def run_pytest(workdir: Path) -> tuple[int, int, str]:
     """
     report = workdir / "_junit.xml"
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests",
-             "--junitxml", str(report), "-q", "-p", "no:cacheprovider"],
-            cwd=workdir, env=_sandboxed_env(workdir),
-            capture_output=True, text=True,
-            timeout=300,
-        )
-        log = (proc.stdout or "") + (proc.stderr or "")
+        mode = os.environ.get("HARNESS_PYTEST_MODE", "local").lower()
+        if mode == "docker":
+            log = _run_pytest_docker(workdir)
+        else:
+            log = _run_pytest_local(workdir, report)
     except subprocess.TimeoutExpired as exc:
         log = f"pytest timeout: {exc}"
+    except (OSError, RuntimeError) as exc:
+        log = f"pytest runner failed: {exc}"
 
     if not report.exists():
         return 0, 0, log

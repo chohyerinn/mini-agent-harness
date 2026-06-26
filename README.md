@@ -23,6 +23,8 @@ tasks/<task-id>/
 
 실행할 때마다 하니스는 임시 작업 폴더를 만들고 에이전트에게는 `tests/`를 보여주지 않습니다. 에이전트가 코드를 수정한 뒤에만 테스트를 복사해서 채점합니다. `conftest.py`, `pytest.py`, `pyproject.toml` 같은 파일로 채점 환경을 건드리려는 변경은 변조로 처리합니다.
 
+기본 채점은 로컬 subprocess에서 돌아가지만, 더 강한 격리가 필요하면 Docker sandbox 모드로 pytest를 실행할 수 있습니다. 이 모드에서는 테스트 프로세스가 호스트 환경 변수와 네트워크에 접근하지 못하고, 과제 workspace만 컨테이너에 마운트됩니다.
+
 리포트에는 다음 값이 남습니다.
 
 - solve rate
@@ -150,6 +152,8 @@ python -m harness.cli run --agent multi:clova --runs 5
 | `clova:HCX-005` | 75 | 150 | 50% | 96,751 |
 | `multi:clova:HCX-005` | 83 | 150 | 55% | 322,422 |
 
+Suite verdict: `improvement_not_significant` — paired bootstrap 95% CI `[-0.153, +0.300]`, McNemar p-value `0.3123`, 추가 성공 1건당 약 `28,209` tokens.
+
 결과만 보면 멀티에이전트 쪽이 solved run은 조금 더 많았습니다. `dedupe-bug`, `flatten-bug`, `host-header-invalid-bug`, `no-proxy-boundary-bug` 등에서는 과제별 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
 
 그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. suite 전체 solve rate는 `50% → 55%`로 올라 보였지만, paired bootstrap 95% CI가 `[-0.153, +0.300]`으로 0을 포함했고 McNemar p-value도 `0.3123`이었습니다. 10회 반복으로 표본을 늘려도, 이 과제 집합에서는 통계적으로 확정된 개선이라고 말하기 어려웠습니다.
@@ -198,3 +202,33 @@ tests/            # 하니스 자체 테스트
 ```bash
 pytest tests -q
 ```
+
+## Docker sandbox
+
+기본 실행은 빠른 로컬 채점입니다. 신뢰하지 않는 에이전트 코드를 더 강하게 격리하고 싶으면 pytest 전용 이미지를 한 번 빌드한 뒤 Docker 모드를 켭니다.
+
+```bash
+docker build -f docker/pytest.Dockerfile -t mini-agent-harness-pytest:latest .
+```
+
+Windows PowerShell:
+
+```powershell
+$env:HARNESS_PYTEST_MODE = "docker"
+python -m harness.cli run --agent mock:solve --runs 1
+```
+
+Docker 모드는 `--network none`, 제한된 CPU/메모리, 최소 환경 변수로 pytest를 실행합니다. 그래서 기존의 `conftest.py`, `pytest.py`, `pyproject.toml` 변조 탐지와 함께 “테스트를 로컬 프로세스로 그대로 믿는” 문제를 줄입니다.
+
+조절 가능한 값:
+
+```powershell
+$env:HARNESS_DOCKER_IMAGE = "mini-agent-harness-pytest:latest"
+$env:HARNESS_DOCKER_CPUS = "1"
+$env:HARNESS_DOCKER_MEMORY = "512m"
+$env:HARNESS_PYTEST_TIMEOUT = "300"
+```
+
+## License
+
+MIT

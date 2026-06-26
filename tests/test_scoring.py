@@ -8,6 +8,7 @@ from harness.scoring import (
     compute_diff,
     find_environment_tampering,
     hash_tree,
+    run_pytest,
 )
 
 
@@ -97,6 +98,34 @@ def test_sandboxed_env_fixes_hashseed_and_pythonpath(tmp_path):
     env = _sandboxed_env(tmp_path)
     assert env["PYTHONHASHSEED"] == "0"
     assert env["PYTHONPATH"] == str(tmp_path)
+
+
+def test_docker_pytest_mode_uses_container_sandbox(monkeypatch, tmp_path):
+    work = tmp_path / "work"
+    (work / "tests").mkdir(parents=True)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        (work / "_junit.xml").write_text('<testsuite tests="1" failures="0" errors="0" skipped="0"/>', encoding="utf-8")
+        class Proc:
+            stdout = "docker ok\n"
+            stderr = ""
+        return Proc()
+
+    monkeypatch.setenv("HARNESS_PYTEST_MODE", "docker")
+    monkeypatch.setenv("HARNESS_DOCKER_IMAGE", "test-image")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    passed, total, log = run_pytest(work)
+
+    assert (passed, total) == (1, 1)
+    assert "docker ok" in log
+    assert captured["cmd"][:3] == ["docker", "run", "--rm"]
+    assert "--network" in captured["cmd"]
+    assert "none" in captured["cmd"]
+    assert "test-image" in captured["cmd"]
+    assert "/work/_junit.xml" in captured["cmd"]
 
 
 # --- hash_tree / compute_diff --------------------------------------------
