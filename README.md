@@ -141,22 +141,22 @@ python -m harness.cli run --agent multi:clova --runs 5
 
 처음에는 Planner-Coder-Reviewer처럼 역할을 나누면 당연히 더 좋아질 것 같았습니다. 그런데 실제로는 호출 횟수도 늘고, 쉬운 문제에서는 오히려 불필요한 수정이 생길 수 있어서 한 번 숫자로 확인해 보고 싶었습니다.
 
-2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 15개 과제를 각각 3번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
+2026-06-26에 `HCX-005`로 단일 에이전트와 Planner-Coder-Reviewer 구성을 비교했습니다. 15개 과제를 각각 10번씩 실행했고, 두 설정 모두 같은 테스트로 채점했습니다.
 
-표본은 아직 작습니다. 15개 과제에 대해 3회씩만 반복한 결과이기 때문에, 아래 숫자는 일반적인 성능 결론이라기보다 이 작은 과제 집합에서 관찰한 경향으로 보는 것이 맞습니다.
+표본은 아직 작습니다. 15개 과제에 대해 10회씩 반복한 결과이기 때문에, 아래 숫자는 일반적인 성능 결론이라기보다 이 작은 과제 집합에서 관찰한 경향으로 보는 것이 맞습니다.
 
 | Agent | Solved runs | Total runs | Solve rate | Total tokens |
 | --- | ---: | ---: | ---: | ---: |
-| `clova:HCX-005` | 22 | 45 | 49% | 28,746 |
-| `multi:clova:HCX-005` | 28 | 45 | 62% | 95,962 |
+| `clova:HCX-005` | 75 | 150 | 50% | 96,751 |
+| `multi:clova:HCX-005` | 83 | 150 | 55% | 322,422 |
 
-결과만 보면 멀티에이전트 쪽이 solved run은 더 많았습니다. `dedupe-bug`, `flatten-bug`, `host-header-invalid-bug`, `no-proxy-boundary-bug`에서는 과제별 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
+결과만 보면 멀티에이전트 쪽이 solved run은 조금 더 많았습니다. `dedupe-bug`, `flatten-bug`, `host-header-invalid-bug`, `no-proxy-boundary-bug` 등에서는 과제별 점수 차이가 신뢰구간 기준으로도 개선 쪽에 있었습니다. 특히 단일 에이전트가 거의 못 풀었던 `dedupe-bug`와 `no-proxy-boundary-bug`에서 차이가 컸습니다.
 
-그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. suite 전체 solve rate는 `49% → 62%`로 올라 보였지만, paired bootstrap 95% CI가 `[-0.111, +0.400]`으로 0을 포함했고 McNemar p-value도 `0.1796`이었습니다. 이 표본에서는 개선 방향은 보였지만, 통계적으로 확정된 개선이라고 말하기는 어렵습니다.
+그렇다고 “멀티에이전트가 무조건 낫다”고 보기는 어렵습니다. suite 전체 solve rate는 `50% → 55%`로 올라 보였지만, paired bootstrap 95% CI가 `[-0.153, +0.300]`으로 0을 포함했고 McNemar p-value도 `0.3123`이었습니다. 10회 반복으로 표본을 늘려도, 이 과제 집합에서는 통계적으로 확정된 개선이라고 말하기 어려웠습니다.
 
-비용도 같이 봐야 했습니다. 토큰 사용량은 약 3.3배 늘었고, solved run 하나당 걸린 시간도 `8.479s`에서 `23.358s`로 늘었습니다. 추가 성공 1건당 한계비용은 약 `11,203` tokens였습니다. 좋아진 부분은 있었지만 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
+비용도 같이 봐야 했습니다. 토큰 사용량은 약 3.3배 늘었고, solved run 하나당 걸린 시간도 `8.554s`에서 `28.911s`로 늘었습니다. 추가 성공 1건당 한계비용은 약 `28,209` tokens였습니다. 좋아진 부분은 있었지만 그만큼 비용과 지연시간도 같이 늘어난 셈입니다.
 
-회귀도 있었습니다. `binary-search-bug`, `default-map-nargs-bug`, `slugify-bug`에서는 확정 회귀가 나왔습니다. 특히 `slugify-bug`에서는 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들 수 있었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
+회귀도 있었습니다. 전체 15개 과제 중 확정 개선은 5건, 확정 회귀도 5건이었습니다. 특히 `slugify-bug` 같은 문자열 처리 과제에서는 reviewer가 “문제 없어 보인다”고 넘긴 코드가 `"  Python   Rocks  "`를 `python-rocks`가 아니라 `python---rocks`로 만들 수 있었습니다. 역할을 나누면 검토 단계가 생기지만, 그 검토가 항상 edge case를 잡아 주는 것은 아니었습니다.
 
 실행 중에는 `multi:clova`에서 429 rate limit도 만났습니다. 과제 하나를 풀 때 모델을 여러 번 부르기 때문에 생긴 문제였습니다. 그래서 CLOVA API 호출에 retry/backoff를 추가했습니다. 이 부분은 성능만 볼 게 아니라 실제 API 제한과 운영 비용도 같이 봐야 한다는 걸 확인한 부분이었습니다.
 
