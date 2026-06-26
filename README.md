@@ -182,6 +182,22 @@ Suite verdict: `improvement_not_significant` — paired bootstrap 95% CI `[-0.15
 | `overlay-enable-async-bug` | overlay 환경이 기존 async 설정을 덮어씀 | [pallets/jinja#2061](https://github.com/pallets/jinja/pull/2061), commit `e45bc74`, BSD-3-Clause |
 | `usage-empty-args-bug` | 빈 args 사용법 출력에서 prefix와 program name이 사라짐 | [pallets/click#3434](https://github.com/pallets/click/pull/3434), commit `0551bf5`, BSD-3-Clause |
 
+## 파이프라인
+
+```mermaid
+flowchart LR
+    T["task<br/>버그 있는 코드"] --> R["runner<br/>작업폴더 격리<br/>채점 직전까지 tests 숨김"]
+    R --> A
+    subgraph A["agent (교체 가능)"]
+        direction TB
+        S["single: CLOVA · Claude · mock"]
+        M["multi: Planner → Coder → Reviewer"]
+    end
+    A --> SC["scoring<br/>pytest · diff · 변조 탐지"]
+    SC --> B["benchmark<br/>반복 ×N · pass@k<br/>bootstrap CI · McNemar"]
+    B --> RP["report<br/>md · json · 토큰 비용"]
+```
+
 ## 파일 구조
 
 ```text
